@@ -121,13 +121,13 @@ export const MapComponent: React.FC<MapComponentProps> = ({
 
       leafletMarker.bindPopup(`
         <div style="font-family: 'Inter', sans-serif; width: 220px; padding: 4px;">
-          ${m.order ? `<div style="font-size: 10px; font-weight: 700; color: #87977B; text-transform: uppercase;">Stop ${m.order} ${m.isMustVisit ? '• Must Visit' : ''}</div>` : ''}
-          <div style="font-family: 'Playfair Display', serif; font-weight: 700; font-size: 14px; color: #302F29; margin-top: 2px;">
+          ${m.order ? `<div style="font-size: 10px; font-weight: 700; color: #49634F; text-transform: uppercase;">Stop ${m.order} ${m.isMustVisit ? '• Must Visit' : ''}</div>` : ''}
+          <div style="font-family: 'Playfair Display', serif; font-weight: 700; font-size: 14px; color: #344B3C; margin-top: 2px;">
             ${m.title}
           </div>
-          ${m.timing ? `<div style="font-size: 11px; color: #636158; margin-top: 2px;">⏰ ${m.timing}</div>` : ''}
+          ${m.timing ? `<div style="font-size: 11px; color: #667363; margin-top: 2px;">⏰ ${m.timing}</div>` : ''}
           ${m.imageUrl ? `<img src="${m.imageUrl}" style="width: 100%; height: 85px; object-fit: cover; border-radius: 6px; margin-top: 6px;" />` : ''}
-          ${m.description ? `<p style="font-size: 11px; color: #636158; margin: 6px 0 0; line-height: 1.3;">${m.description.slice(0, 100)}...</p>` : ''}
+          ${m.description ? `<p style="font-size: 11px; color: #667363; margin: 6px 0 0; line-height: 1.3;">${m.description.slice(0, 100)}...</p>` : ''}
         </div>
       `);
 

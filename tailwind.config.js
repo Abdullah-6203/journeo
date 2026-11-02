@@ -7,26 +7,37 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Journeo Palette
+        // Journeo Refined Earthy Sage Palette
         ivory: {
-          DEFAULT: '#F7F4EA',
-          dark: '#EAE8DC',
-          light: '#FDFBF7',
+          DEFAULT: '#E8E9DC', // Main light background
+          dark: '#DFE3D3',    // Alternate section background
+          light: '#F1F0E6',   // Card background
         },
         sage: {
-          DEFAULT: '#87977B',
-          light: '#A5B39C',
-          dark: '#68785D',
+          DEFAULT: '#C8D2BE', // Soft sage green
+          light: '#DFE3D3',   // Alternate section
+          dark: '#667363',    // Secondary text
         },
         'deep-green': {
-          DEFAULT: '#344B38',
-          light: '#47634C',
-          dark: '#223325',
+          DEFAULT: '#49634F', // Forest green accent
+          light: '#5C7763',
+          dark: '#344B3C',    // Primary text
         },
         terracotta: {
           DEFAULT: '#C87950',
           light: '#D8916E',
           dark: '#A85E37',
+        },
+        gold: {
+          DEFAULT: '#B99A68', // Muted gold accent
+          dark: '#A98954',
+          light: '#D4AF37',
+        },
+        olive: {
+          DEFAULT: '#B7C3A7', // Light olive
+        },
+        card: {
+          DEFAULT: '#F1F0E6', // Card background
         },
         'warm-brown': {
           DEFAULT: '#65513D',
@@ -34,13 +45,13 @@ export default {
           dark: '#4C3B2B',
         },
         text: {
-          DEFAULT: '#302F29',
-          muted: '#636158',
-          subtle: '#8C897D',
+          DEFAULT: '#344B3C', // Primary text
+          muted: '#667363',   // Secondary text
+          subtle: '#889684',  // Subtle text
         },
         border: {
-          DEFAULT: '#E2DEC9',
-          subtle: '#EFECE0',
+          DEFAULT: '#C9D0BF', // Subtle borders
+          subtle: '#DFE3D3',
         }
       },
       fontFamily: {

@@ -168,7 +168,7 @@ export const DestinationDetailPage: React.FC = () => {
           </div>
 
           {/* Dedicated Section: Discover Its Story (Section 12 requirement) */}
-          <div className="bg-[#FAF7F0] rounded-3xl border border-border p-7 shadow-soft-sm space-y-3">
+          <div className="bg-[#F1F0E6] rounded-3xl border border-border p-7 shadow-soft-sm space-y-3">
             <div className="flex items-center gap-2 text-deep-green font-bold text-xs uppercase tracking-wider">
               <BookOpen className="w-4 h-4 text-terracotta" />
               <span>Discover Its Story — Historical Significance</span>
@@ -176,7 +176,7 @@ export const DestinationDetailPage: React.FC = () => {
             <h3 className="font-serif text-xl font-bold text-text">
               Royal Heritage & Cultural Context
             </h3>
-            <p className="text-xs sm:text-sm text-text leading-relaxed font-serif italic text-[#3F3B35]">
+            <p className="text-xs sm:text-sm text-text leading-relaxed font-serif italic text-[#344B3C]">
               "{destination.historicalSignificance || destination.description}"
             </p>
             <div className="pt-2 flex items-center gap-1.5 text-xs text-text-subtle">

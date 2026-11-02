@@ -4,8 +4,8 @@
 
 @layer base {
   body {
-    background-color: #F7F4EA;
-    color: #302F29;
+    background-color: #E8E9DC;
+    color: #344B3C;
     font-family: 'Inter', system-ui, sans-serif;
   }
 
@@ -21,16 +21,16 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #EAE8DC;
+  background: #DFE3D3;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #A5B39C;
+  background: #C8D2BE;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #68785D;
+  background: #49634F;
 }
 
 /* Leaflet Container Styling */

@@ -13,6 +13,8 @@ export const Navbar: React.FC = () => {
 
   const closeMobile = () => setMobileMenuOpen(false);
 
+  const planningDestination = user ? '/plan' : '/login?redirect=/plan';
+
   return (
     <header className="sticky top-0 z-50 bg-[#F7F4EA]/95 backdrop-blur-md border-b border-border shadow-soft-sm transition-all">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
@@ -62,7 +64,7 @@ export const Navbar: React.FC = () => {
           </a>
         </nav>
 
-        {/* Right: Actions */}
+        {/* Right: Actions (No unauthenticated Login / Sign Up button) */}
         <div className="hidden sm:flex items-center gap-3">
           {user ? (
             <div className="flex items-center gap-2">
@@ -96,20 +98,11 @@ export const Navbar: React.FC = () => {
                 <LogOut className="w-4 h-4" />
               </button>
             </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Link
-                to="/login"
-                className="px-3.5 py-2 text-xs font-semibold text-text hover:text-deep-green transition-colors"
-              >
-                Login / Sign Up
-              </Link>
-            </div>
-          )}
+          ) : null}
 
-          {/* Dark Green CTA */}
+          {/* Prominent CTA - redirects to login if unauthenticated */}
           <Link
-            to="/plan"
+            to={planningDestination}
             className="px-5 py-2.5 rounded-xl bg-deep-green hover:bg-deep-green-dark text-white font-semibold text-xs tracking-wide shadow-soft-sm hover:shadow-soft-md transition-all flex items-center gap-1.5 group"
           >
             <Sparkles className="w-3.5 h-3.5 text-sage-light group-hover:rotate-12 transition-transform" />
@@ -117,10 +110,10 @@ export const Navbar: React.FC = () => {
           </Link>
         </div>
 
-        {/* Mobile Hamburger Button */}
+        {/* Mobile Action & Hamburger Button */}
         <div className="flex items-center gap-2 sm:hidden">
           <Link
-            to="/plan"
+            to={planningDestination}
             className="px-3 py-1.5 rounded-lg bg-deep-green text-white text-xs font-semibold"
           >
             Plan
@@ -197,15 +190,7 @@ export const Navbar: React.FC = () => {
                   <LogOut className="w-4 h-4" />
                 </button>
               </>
-            ) : (
-              <Link
-                to="/login"
-                onClick={closeMobile}
-                className="p-2 rounded-lg bg-sage/15 text-deep-green font-bold text-center mt-2"
-              >
-                Login / Sign Up
-              </Link>
-            )}
+            ) : null}
           </div>
         </div>
       )}

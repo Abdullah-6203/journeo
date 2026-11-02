@@ -1,24 +1,23 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Compass, User, LogOut, Bookmark, Sparkles, MapPin } from 'lucide-react';
+import { Compass, User, LogOut, Bookmark, Sparkles, Menu, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-interface NavbarProps {
-  onOpenAuth?: (mode: 'login' | 'register') => void;
-}
-
-export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth }) => {
+export const Navbar: React.FC = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const isActive = (path: string) => location.pathname === path;
+
+  const closeMobile = () => setMobileMenuOpen(false);
 
   return (
     <header className="sticky top-0 z-50 bg-[#F7F4EA]/95 backdrop-blur-md border-b border-border shadow-soft-sm transition-all">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
         {/* Left: Brand */}
-        <Link to="/" className="flex items-center gap-3 group">
+        <Link to="/" onClick={closeMobile} className="flex items-center gap-3 group">
           <div className="w-10 h-10 rounded-xl bg-deep-green text-white flex items-center justify-center font-serif text-xl shadow-soft-sm group-hover:scale-105 transition-transform">
             <Compass className="w-6 h-6 text-ivory" />
           </div>
@@ -35,7 +34,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth }) => {
           </div>
         </Link>
 
-        {/* Centre: Nav links */}
+        {/* Centre: Desktop Nav links */}
         <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-text-muted">
           <Link
             to="/"
@@ -56,7 +55,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth }) => {
             Destinations
           </Link>
           <a
-            href="#how-it-works"
+            href="/#how-it-works"
             className="transition-colors hover:text-deep-green"
           >
             How It Works
@@ -64,7 +63,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth }) => {
         </nav>
 
         {/* Right: Actions */}
-        <div className="flex items-center gap-3">
+        <div className="hidden sm:flex items-center gap-3">
           {user ? (
             <div className="flex items-center gap-2">
               <Link
@@ -87,7 +86,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth }) => {
                 }`}
               >
                 <User className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{user.name.split(' ')[0]}</span>
+                <span>{user.name.split(' ')[0]}</span>
               </Link>
               <button
                 onClick={logout}
@@ -100,21 +99,15 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth }) => {
           ) : (
             <div className="flex items-center gap-2">
               <Link
-                to="/my-trips"
-                className="text-xs font-semibold text-text-muted hover:text-text px-2.5 py-1.5 transition-colors hidden sm:block"
-              >
-                My Trips
-              </Link>
-              <button
-                onClick={() => onOpenAuth ? onOpenAuth('login') : navigate('/login')}
+                to="/login"
                 className="px-3.5 py-2 text-xs font-semibold text-text hover:text-deep-green transition-colors"
               >
                 Login / Sign Up
-              </button>
+              </Link>
             </div>
           )}
 
-          {/* Prominent Dark Green CTA */}
+          {/* Dark Green CTA */}
           <Link
             to="/plan"
             className="px-5 py-2.5 rounded-xl bg-deep-green hover:bg-deep-green-dark text-white font-semibold text-xs tracking-wide shadow-soft-sm hover:shadow-soft-md transition-all flex items-center gap-1.5 group"
@@ -123,7 +116,99 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth }) => {
             <span>Plan My Trip</span>
           </Link>
         </div>
+
+        {/* Mobile Hamburger Button */}
+        <div className="flex items-center gap-2 sm:hidden">
+          <Link
+            to="/plan"
+            className="px-3 py-1.5 rounded-lg bg-deep-green text-white text-xs font-semibold"
+          >
+            Plan
+          </Link>
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="p-2 rounded-lg text-text hover:bg-ivory-dark"
+            aria-label="Toggle navigation"
+          >
+            {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
+        </div>
       </div>
+
+      {/* Mobile Menu Drawer */}
+      {mobileMenuOpen && (
+        <div className="md:hidden border-t border-border bg-[#F7F4EA] px-4 pt-4 pb-6 space-y-3">
+          <div className="flex flex-col space-y-2 text-sm font-medium">
+            <Link
+              to="/"
+              onClick={closeMobile}
+              className={`p-2 rounded-lg hover:bg-ivory-dark ${isActive('/') ? 'text-deep-green font-bold bg-sage/10' : 'text-text'}`}
+            >
+              Home
+            </Link>
+            <Link
+              to="/explore"
+              onClick={closeMobile}
+              className={`p-2 rounded-lg hover:bg-ivory-dark ${isActive('/explore') ? 'text-deep-green font-bold bg-sage/10' : 'text-text'}`}
+            >
+              Explore
+            </Link>
+            <Link
+              to="/destinations"
+              onClick={closeMobile}
+              className={`p-2 rounded-lg hover:bg-ivory-dark ${isActive('/destinations') ? 'text-deep-green font-bold bg-sage/10' : 'text-text'}`}
+            >
+              Destinations
+            </Link>
+            <a
+              href="/#how-it-works"
+              onClick={closeMobile}
+              className="p-2 rounded-lg hover:bg-ivory-dark text-text"
+            >
+              How It Works
+            </a>
+            {user ? (
+              <>
+                <Link
+                  to="/my-trips"
+                  onClick={closeMobile}
+                  className="p-2 rounded-lg hover:bg-ivory-dark text-text flex items-center justify-between"
+                >
+                  <span>My Trips</span>
+                  <Bookmark className="w-4 h-4 text-deep-green" />
+                </Link>
+                <Link
+                  to="/profile"
+                  onClick={closeMobile}
+                  className="p-2 rounded-lg hover:bg-ivory-dark text-text flex items-center justify-between"
+                >
+                  <span>Profile ({user.name})</span>
+                  <User className="w-4 h-4 text-deep-green" />
+                </Link>
+                <button
+                  onClick={() => {
+                    logout();
+                    closeMobile();
+                  }}
+                  className="p-2 rounded-lg hover:bg-terracotta/10 text-terracotta text-left flex items-center justify-between"
+                >
+                  <span>Log Out</span>
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </>
+            ) : (
+              <Link
+                to="/login"
+                onClick={closeMobile}
+                className="p-2 rounded-lg bg-sage/15 text-deep-green font-bold text-center mt-2"
+              >
+                Login / Sign Up
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
     </header>
   );
 };

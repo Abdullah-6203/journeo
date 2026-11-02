@@ -16,19 +16,26 @@ import {
   Globe
 } from 'lucide-react';
 import { api } from '../services/api';
+import { INDIA_DESTINATIONS } from '../data/indiaDestinations';
 import { MapComponent } from '../components/MapComponent';
 import { InteractiveGlobe3D } from '../components/InteractiveGlobe3D';
+import { useUserVisitedPlaces } from '../hooks/useUserVisitedPlaces';
 import { Button } from '../components/ui/Button';
 
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
-  const [destinations, setDestinations] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { isAuthenticated, summary } = useUserVisitedPlaces();
+  const [destinations, setDestinations] = useState<any[]>(() =>
+    INDIA_DESTINATIONS.filter(d => d.isMustVisit).slice(0, 6)
+  );
+  const [loading, setLoading] = useState(false);
   const [heroView, setHeroView] = useState<'globe' | 'itinerary'>('globe');
 
   useEffect(() => {
     api.getDestinations().then(data => {
-      setDestinations(data.destinations || []);
+      if (data.destinations && data.destinations.length > 0) {
+        setDestinations(data.destinations);
+      }
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
@@ -126,7 +133,7 @@ export const HomePage: React.FC = () => {
                     }`}
                   >
                     <Globe className="w-3.5 h-3.5" />
-                    <span>3D India Globe</span>
+                    <span>3D Travel Globe</span>
                   </button>
                   <button
                     type="button"
@@ -143,7 +150,11 @@ export const HomePage: React.FC = () => {
                 </div>
 
                 <span className="text-[10px] font-bold uppercase tracking-wider text-terracotta bg-terracotta/10 px-2.5 py-1 rounded-full">
-                  {heroView === 'globe' ? 'Interactive 3D' : 'Smart Plan'}
+                  {heroView === 'globe'
+                    ? isAuthenticated
+                      ? `${summary.uniquePlacesCount} Visited`
+                      : 'Interactive Earth'
+                    : 'Smart Plan'}
                 </span>
               </div>
 
@@ -151,12 +162,16 @@ export const HomePage: React.FC = () => {
                 <div className="py-2 space-y-4">
                   <InteractiveGlobe3D />
                   <div className="flex items-center justify-between pt-3 border-t border-border text-xs">
-                    <span className="text-text-muted">Explore India hubs in 3D</span>
+                    <span className="text-text-muted">
+                      {isAuthenticated
+                        ? `${summary.uniquePlacesCount} unique places across ${summary.uniqueCitiesCount} cities`
+                        : 'Drag to rotate • Scroll to zoom'}
+                    </span>
                     <Link
-                      to="/plan"
+                      to={isAuthenticated ? '/my-trips' : '/plan'}
                       className="px-4 py-2 bg-deep-green hover:bg-deep-green-dark text-white text-xs font-semibold rounded-xl transition-all shadow-soft-sm flex items-center gap-1.5"
                     >
-                      <span>Plan This Route</span>
+                      <span>{isAuthenticated ? 'My Travel Log' : 'Plan a Journey'}</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </Link>
                   </div>

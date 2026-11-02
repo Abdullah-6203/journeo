@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { TripProvider } from './context/TripContext';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
 import { AuthModal } from './components/AuthModal';
@@ -13,6 +14,7 @@ import { JourneyModePage } from './pages/JourneyModePage';
 import { MyTripsPage } from './pages/MyTripsPage';
 import { DestinationsListPage } from './pages/DestinationsListPage';
 import { DestinationDetailPage } from './pages/DestinationDetailPage';
+import { ExplorePage } from './pages/ExplorePage';
 import { ProfilePage } from './pages/ProfilePage';
 
 export const App: React.FC = () => {
@@ -26,14 +28,15 @@ export const App: React.FC = () => {
 
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <div className="min-h-screen bg-[#F7F4EA] text-[#302F29] flex flex-col font-sans selection:bg-sage/25 selection:text-deep-green">
+      <TripProvider>
+        <BrowserRouter>
+          <div className="min-h-screen bg-[#F7F4EA] text-[#302F29] flex flex-col font-sans selection:bg-sage/25 selection:text-deep-green">
           <Navbar onOpenAuth={openAuth} />
 
           <main className="flex-1">
             <Routes>
               <Route path="/" element={<HomePage />} />
-              <Route path="/explore" element={<DestinationsListPage />} />
+              <Route path="/explore" element={<ExplorePage />} />
               <Route path="/destinations" element={<DestinationsListPage />} />
               <Route path="/destinations/:id" element={<DestinationDetailPage />} />
               <Route path="/plan" element={<PlanTripPage />} />
@@ -69,6 +72,7 @@ export const App: React.FC = () => {
           />
         </div>
       </BrowserRouter>
-    </AuthProvider>
-  );
+    </TripProvider>
+  </AuthProvider>
+);
 };

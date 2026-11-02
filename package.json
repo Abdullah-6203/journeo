@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "jiti src/features/itinerary/services/__tests__/optimizerValidation.ts",
+    "test:optimizer": "jiti src/features/itinerary/services/__tests__/optimizerValidation.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

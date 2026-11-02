@@ -1,0 +1,104 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String            @id @default(uuid())
+  name             String
+  email            String            @unique
+  passwordHash     String
+  createdAt        DateTime          @default(now())
+  preferences      UserPreference?
+  trips            Trip[]
+  savedDestinations SavedDestination[]
+}
+
+model UserPreference {
+  id                  String   @id @default(uuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interests           String   // JSON string of array e.g. ["Historical Monuments", "Museums"]
+  travelStyle         String   @default("balanced") // relaxed, balanced, packed
+  budgetPreference    String   @default("medium")   // low, medium, luxury
+  transportPreference String   @default("cab")      // walking, public, cab, bicycle
+  idealExperience     String?  // Optional natural language input
+  updatedAt           DateTime @updatedAt
+}
+
+model Destination {
+  id                     String             @id @default(uuid())
+  name                   String
+  city                   String
+  description            String
+  historicalSignificance String?
+  category               String             // Heritage, Monument, Nature, Museum, Cultural, Religious
+  interestTags           String             // JSON string of tags
+  latitude               Float
+  longitude              Float
+  averageVisitDuration   Int                // in minutes
+  imageUrl               String
+  officialSource         String?            // e.g. "Archaeological Survey of India (ASI) & UNESCO"
+  googlePlaceId          String?
+  openingHours           String             @default("09:00 - 17:30")
+  entryFeeINR            Int                @default(0)
+  highlights             String             @default("[]") // JSON string of highlights
+  isMustVisit            Boolean            @default(false)
+  createdAt              DateTime           @default(now())
+  stops                  ItineraryStop[]
+  savedBy                SavedDestination[]
+}
+
+model Trip {
+  id               String          @id @default(uuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title            String          @default("Delhi Royal Heritage Circuit")
+  destinationCity  String          @default("Delhi")
+  startDate        String
+  endDate          String
+  startingLocation String          @default("Connaught Place, Central Delhi")
+  budget           Float?
+  groupSize        Int             @default(1)
+  transportation   String          @default("cab") // walking, public, cab, bicycle
+  travelStyle      String          @default("balanced")
+  status           String          @default("UPCOMING") // UPCOMING, ONGOING, COMPLETED
+  optimizationScore Int            @default(95)
+  totalDistanceKm  Float           @default(0)
+  totalDurationMin Int             @default(0)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  stops            ItineraryStop[]
+}
+
+model ItineraryStop {
+  id                 String      @id @default(uuid())
+  tripId             String
+  trip               Trip        @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  destinationId      String
+  destination        Destination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  sequenceNumber     Int
+  plannedArrival     String      // e.g. "09:30"
+  plannedDeparture   String      // e.g. "11:30"
+  visitDuration      Int         // in minutes
+  visitStatus        String      @default("PENDING") // PENDING, VISITED, SKIPPED
+  isMustVisit        Boolean     @default(false)
+  transitInstruction String?
+  transitMinutes     Int         @default(15)
+  distanceFromPrevKm Float       @default(3.0)
+}
+
+model SavedDestination {
+  id            String      @id @default(uuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  destinationId String
+  destination   Destination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+
+  @@unique([userId, destinationId])
+}

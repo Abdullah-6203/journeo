@@ -1,5 +1,10 @@
 import { IndiaDestination, INDIA_DESTINATIONS } from '../data/indiaDestinations';
 import {
+  queryPlacesByDestination,
+  persistTripItineraryToDatabase,
+  persistChatMessageToDatabase
+} from './placeDatabaseService';
+import {
   OptimizedItineraryResponse,
   ItineraryDayOutput,
   ItineraryStopOutput,
@@ -17,8 +22,10 @@ export type TripAssistantActionType =
   | 'replace_place'
   | 'move_place_to_day'
   | 'change_day_pace'
+  | 'update_preferences'
   | 'change_preferences'
   | 'reoptimize_itinerary'
+  | 'find_alternatives'
   | 'shorten_day'
   | 'answer_question'
   | 'clarify_request'
@@ -30,8 +37,12 @@ export interface TripAssistantAction {
   targetDayNumber?: number;
   placeId?: string;
   replacementPlaceId?: string;
+  removePlaceId?: string;
+  addPlaceId?: string;
   pace?: 'relaxed' | 'balanced' | 'packed';
   maxStops?: number;
+  preferenceChanges?: Record<string, any>;
+  alternatives?: { id: string; name: string; subcategory?: string }[];
   preferences?: {
     addInterests?: string[];
     removeInterests?: string[];
@@ -60,6 +71,7 @@ export interface AssistantConversationContext {
   lastReferencedDayNumber?: number;
   lastReferencedPlaceId?: string;
   lastActionType?: TripAssistantActionType;
+  lastTopic?: 'food' | 'cafes' | 'heritage' | 'nature' | 'hidden_gems';
 }
 
 export interface AssistantResponsePayload {
@@ -69,6 +81,104 @@ export interface AssistantResponsePayload {
   updatedItinerary?: OptimizedItineraryResponse;
   updatedContext: AssistantConversationContext;
   suggestions: string[];
+  persistedToDatabase?: boolean;
+}
+
+export interface ExternalApiStatusEntry {
+  service: string;
+  envVarName: string;
+  placement: 'backend (.env)' | 'frontend (.env)';
+  configured: boolean;
+  freeTierOrBilling: string;
+  rateLimits: string;
+  statusMessage: string;
+}
+
+export interface ExternalApiConfigurationReport {
+  allConfigured: boolean;
+  missingEnvVars: string[];
+  services: ExternalApiStatusEntry[];
+  summary: string;
+}
+
+/**
+ * Explicitly inspects external API key configuration (`GEMINI_API_KEY`, `GOOGLE_MAPS_API_KEY`, `VITE_MAPTILER_API_KEY`).
+ * Never silently fakes an external API call when a required key is missing (Test K).
+ */
+export function checkExternalApiConfiguration(
+  envOverride?: Record<string, string | undefined>
+): ExternalApiConfigurationReport {
+  const getEnv = (key: string): string => {
+    if (envOverride && key in envOverride) {
+      return (envOverride[key] || '').trim();
+    }
+    const proc = (globalThis as any).process;
+    if (proc != null && proc.env && key in proc.env) {
+      return (proc.env[key] || '').trim();
+    }
+    return '';
+  };
+
+  const isRealKey = (val: string) =>
+    Boolean(
+      val &&
+        val.length > 8 &&
+        !val.includes('your_') &&
+        !val.includes('placeholder') &&
+        val !== 'undefined'
+    );
+
+  const geminiKey = getEnv('GEMINI_API_KEY');
+  const gmapsKey = getEnv('GOOGLE_MAPS_API_KEY');
+  const maptilerKey = getEnv('VITE_MAPTILER_API_KEY');
+
+  const services: ExternalApiStatusEntry[] = [
+    {
+      service: 'Google Gemini AI (Conversational Trip Assistant LLM)',
+      envVarName: 'GEMINI_API_KEY',
+      placement: 'backend (.env)',
+      configured: isRealKey(geminiKey),
+      freeTierOrBilling: 'Free tier available via Google AI Studio (15 RPM / 1M TPM on gemini-1.5-flash); pay-as-you-go for higher production quotas.',
+      rateLimits: '15 requests/min (Free Tier), 2,000 requests/min (Pay-as-you-go Tier 1)',
+      statusMessage: isRealKey(geminiKey)
+        ? 'Configured: Live Gemini 1.5 Flash LLM enabled.'
+        : 'MISSING API KEY: GEMINI_API_KEY is not set in backend/.env. Live Gemini LLM calls cannot execute; using deterministic local structured intent parser + SQLite personalization engine.'
+    },
+    {
+      service: 'Google Places & Routes API (Live Place Ratings, Reviews & Traffic Matrix)',
+      envVarName: 'GOOGLE_MAPS_API_KEY',
+      placement: 'backend (.env)',
+      configured: isRealKey(gmapsKey),
+      freeTierOrBilling: 'Requires Google Cloud Billing Account enabled ($200/month free usage credit ~ 11,000 Place Details calls or 40,000 Directions calls).',
+      rateLimits: '50 QPS default per project',
+      statusMessage: isRealKey(gmapsKey)
+        ? 'Configured: Live Google Places & Directions API enabled.'
+        : 'MISSING API KEY: GOOGLE_MAPS_API_KEY is not set in backend/.env. Live Google Places/Directions API calls are unavailable; using verified SQLite database catalog + public OSRM road routing.'
+    },
+    {
+      service: 'MapTiler Vector Tiles & Geocoding (Interactive Map Rendering)',
+      envVarName: 'VITE_MAPTILER_API_KEY',
+      placement: 'frontend (.env)',
+      configured: isRealKey(maptilerKey),
+      freeTierOrBilling: 'Free tier (100,000 tile requests/month, no credit card required); OpenFreeMap/CARTO vector styles used when omitted.',
+      rateLimits: '100,000 requests/month free tier',
+      statusMessage: isRealKey(maptilerKey)
+        ? 'Configured: MapTiler vector tile key active.'
+        : 'MISSING API KEY: VITE_MAPTILER_API_KEY is not set in .env. Using public OpenFreeMap Positron vector tiles & Nominatim geocoding.'
+    }
+  ];
+
+  const missingEnvVars = services.filter(s => !s.configured).map(s => s.envVarName);
+
+  return {
+    allConfigured: missingEnvVars.length === 0,
+    missingEnvVars,
+    services,
+    summary:
+      missingEnvVars.length === 0
+        ? 'All external API keys are configured.'
+        : `Missing external API keys: ${missingEnvVars.join(', ')}. Configure these in backend/.env and .env to enable live external provider calls.`
+  };
 }
 
 /**
@@ -204,6 +314,26 @@ function findScheduledStopInItinerary(
         s.name.toLowerCase().includes('garden') ||
         s.name.toLowerCase().includes('park') ||
         s.name.toLowerCase().includes('bagh')
+    },
+    {
+      keyword: 'cafe',
+      matchFn: s =>
+        s.mealType === 'cafe' ||
+        (s.subcategory || '').toLowerCase().includes('cafe') ||
+        s.name.toLowerCase().includes('cafe') ||
+        s.name.toLowerCase().includes('coffee') ||
+        s.category === 'Food'
+    },
+    {
+      keyword: 'coffee',
+      matchFn: s =>
+        s.name.toLowerCase().includes('coffee') ||
+        s.name.toLowerCase().includes('cafe') ||
+        s.mealType === 'cafe'
+    },
+    {
+      keyword: 'food',
+      matchFn: s => s.category === 'Food' || Boolean(s.isMealStop)
     }
   ];
 
@@ -225,7 +355,7 @@ function findScheduledStopInItinerary(
 }
 
 /**
- * Searches verified catalog places in the active destination that are NOT yet in the itinerary
+ * Searches verified catalog places in the active destination (from the SQLite database) that are NOT yet in the itinerary
  */
 function findVerifiedCatalogCandidate(
   queryText: string,
@@ -236,32 +366,77 @@ function findVerifiedCatalogCandidate(
   const destId = itinerary.canonicalDestination.destinationId;
   const targetCity = itinerary.destinationCity.toLowerCase();
 
-  const cityCatalog = INDIA_DESTINATIONS.filter(
-    p => p.destinationId === destId || p.city.toLowerCase() === targetCity
-  );
+  const dbPlaces = queryPlacesByDestination(destId).places;
+  const cityCatalog =
+    dbPlaces.length > 0
+      ? dbPlaces
+      : INDIA_DESTINATIONS.filter(
+          p => p.destinationId === destId || p.city.toLowerCase() === targetCity
+        );
 
   const existingIds = new Set(itinerary.stops.map(s => s.placeId));
+  const genericWords = new Set([
+    'heritage',
+    'monument',
+    'park',
+    'garden',
+    'gardens',
+    'lake',
+    'beach',
+    'cafe',
+    'cafes',
+    'coffee',
+    'house',
+    'food',
+    'street',
+    'market',
+    'bazaar',
+    'temple',
+    'palace',
+    'fort',
+    'tomb',
+    'museum',
+    'royal',
+    'indian',
+    'delhi',
+    'jaipur',
+    'goa',
+    'walk',
+    'trail',
+    'point',
+    'sunset',
+    'nature',
+    'local'
+  ]);
 
   // First check if the user named a specific catalog place in this destination
   for (const place of cityCatalog) {
+    if (existingIds.has(place.id)) continue;
     const cleanName = place.name.split('(')[0].trim().toLowerCase();
-    const keywords = cleanName.split(/\s+/).filter(w => w.length >= 4);
+    const keywords = cleanName
+      .split(/[^a-z0-9]+/)
+      .filter(w => w.length >= 4 && !genericWords.has(w));
     if (
       lower.includes(cleanName) ||
       lower.includes(place.id.toLowerCase()) ||
       (keywords.length > 0 && keywords.some(kw => lower.includes(kw)))
     ) {
-      return place;
+      if (!filterPred || filterPred(place)) {
+        return place;
+      }
     }
   }
 
-  // Otherwise pick the best unvisited candidate matching filterPred
+  // Otherwise pick the best unvisited candidate matching filterPred (or fallback to cityCatalog if all of that category were visited)
   const unvisited = cityCatalog.filter(p => !existingIds.has(p.id));
-  const pool = unvisited.length > 0 ? unvisited : cityCatalog;
 
   if (filterPred) {
-    const matched = pool.filter(filterPred);
-    if (matched.length > 0) return matched[0];
+    const unvisitedMatched = unvisited.filter(filterPred);
+    if (unvisitedMatched.length > 0) return unvisitedMatched[0];
+    const allMatched = cityCatalog.filter(filterPred);
+    if (allMatched.length > 0) return allMatched[0];
+  } else if (unvisited.length > 0) {
+    return unvisited[0];
   }
 
   return null;
@@ -641,7 +816,123 @@ export function processTripAssistantMessage(
   }
 
   // ============================================================================
-  // CASE 5: REPLACE A PLACE ("Replace X with Y", "Swap the fort for a quiet garden/nature spot")
+  // CASE 4.5: FIND ALTERNATIVES / REPLACE CAFES ("I don't like these cafes. Show me different ones.", "Find alternatives to...")
+  // ============================================================================
+  if (
+    ((lower.includes("don't like") || lower.includes('dont like') || lower.includes('dislike') || lower.includes('different') || lower.includes('other') || lower.includes('alternative')) &&
+      (lower.includes('cafe') || lower.includes('coffee') || lower.includes('food') || lower.includes('places'))) ||
+    lower.startsWith('find alternatives') ||
+    lower.startsWith('show me different')
+  ) {
+    const destId = activeItinerary.canonicalDestination.destinationId;
+    const dbPlaces = queryPlacesByDestination(destId).places;
+    const currentCafeAndFoodIds = new Set<string>();
+    const currentAllStopIds = new Set<string>(activeItinerary.stops.map(s => s.placeId));
+
+    activeItinerary.stops.forEach(s => {
+      const subLower = (s.subcategory || '').toLowerCase();
+      const nameLower = s.name.toLowerCase();
+      if (
+        s.category === 'Food' ||
+        s.isMealStop ||
+        subLower.includes('cafe') ||
+        nameLower.includes('cafe') ||
+        nameLower.includes('coffee')
+      ) {
+        currentCafeAndFoodIds.add(s.placeId);
+      }
+    });
+
+    // Find fresh verified cafes/food spots in the database that are NOT currently scheduled
+    let alternativeCafes = dbPlaces.filter(
+      p =>
+        (p.category === 'Food' ||
+          p.isMealStop ||
+          (p.subcategory || '').toLowerCase().includes('cafe')) &&
+        !currentCafeAndFoodIds.has(p.id) &&
+        !currentAllStopIds.has(p.id)
+    );
+
+    if (alternativeCafes.length === 0) {
+      alternativeCafes = dbPlaces.filter(
+        p => !currentCafeAndFoodIds.has(p.id) && !currentAllStopIds.has(p.id)
+      );
+    }
+
+    const newExcluded = Array.from(
+      new Set([...(activeItinerary.tripConfig?.excludedPlaceIds || []), ...Array.from(currentCafeAndFoodIds)])
+    );
+
+    // Replace existing cafes in dayPlacesMap with fresh alternatives
+    let altIdx = 0;
+    const replacedPairs: { removed: string; added: string }[] = [];
+
+    for (const [dNum, places] of dayPlacesMap.entries()) {
+      const updated = places.map(p => {
+        if (currentCafeAndFoodIds.has(p.id) && altIdx < alternativeCafes.length) {
+          const fresh = alternativeCafes[altIdx++];
+          replacedPairs.push({ removed: p.name.split('(')[0].trim(), added: fresh.name.split('(')[0].trim() });
+          return fresh;
+        }
+        return p;
+      });
+      // If day didn't have a primary cafe stop, swap one stop or append an alternative cafe
+      if (replacedPairs.length === 0 && altIdx < alternativeCafes.length) {
+        const fresh = alternativeCafes[altIdx++];
+        if (updated.length > 0) {
+          replacedPairs.push({ removed: updated[0].name.split('(')[0].trim(), added: fresh.name.split('(')[0].trim() });
+          updated[0] = fresh;
+        } else {
+          updated.push(fresh);
+          replacedPairs.push({ removed: 'previous selection', added: fresh.name.split('(')[0].trim() });
+        }
+      }
+      dayPlacesMap.set(dNum, updated);
+    }
+
+    const updatedItinerary = rebuildItineraryWithUpdatedDays(activeItinerary, dayPlacesMap, dayPacesMap, {
+      excludedPlaceIds: newExcluded
+    });
+
+    persistTripItineraryToDatabase({
+      tripId: updatedItinerary.tripId,
+      itinerary: updatedItinerary as any
+    });
+
+    const altList = alternativeCafes.slice(0, 3).map(a => ({
+      id: a.id,
+      name: a.name,
+      subcategory: a.subcategory
+    }));
+
+    return {
+      reply: `Got it! I excluded the previous cafes and swapped in fresh verified alternatives in **${city}**: **${altList
+        .map(a => a.name.split('(')[0].trim())
+        .join(', ')}**. Your itinerary and route timings have been updated!`,
+      action: {
+        type: 'find_alternatives',
+        placeId: Array.from(currentCafeAndFoodIds)[0],
+        removePlaceId: Array.from(currentCafeAndFoodIds)[0],
+        addPlaceId: altList[0]?.id,
+        preferenceChanges: { excludedPlaceIds: newExcluded, rotateCafes: true },
+        alternatives: altList,
+        summary: `Excluded previous cafes (${Array.from(currentCafeAndFoodIds).join(', ')}) and replaced with fresh verified alternatives`
+      },
+      modified: true,
+      updatedItinerary,
+      updatedContext: {
+        lastReferencedDayNumber: resolvedDay || 1,
+        lastReferencedPlaceId: altList[0]?.id,
+        lastActionType: 'find_alternatives',
+        lastTopic: 'cafes'
+      },
+      suggestions: ['Make them local street food instead', 'Make Day 1 more relaxed'],
+      persistedToDatabase: true
+    };
+  }
+
+  // ============================================================================
+  // CASE 5: REPLACE A PLACE ("Replace X with Y", "Swap the fort for a quiet garden/nature spot", "Replace this cafe")
   // ============================================================================
   if (lower.startsWith('replace ') || lower.startsWith('swap ') || lower.includes('instead of ')) {
     const matched = findScheduledStopInItinerary(trimmed, activeItinerary, resolvedDay);
@@ -652,14 +943,25 @@ export function processTripAssistantMessage(
       activeItinerary.stops[0];
 
     const wantsNature = lower.includes('nature') || lower.includes('garden') || lower.includes('park') || lower.includes('quiet') || lower.includes('peaceful');
-    const wantsFood = lower.includes('food') || lower.includes('cafe') || lower.includes('market') || lower.includes('bazaar');
+    const wantsCafe = lower.includes('cafe') || lower.includes('coffee') || lower.includes('bakery');
+    const wantsFood = lower.includes('food') || lower.includes('market') || lower.includes('bazaar') || wantsCafe;
+    const wantsHeritage = lower.includes('heritage') || lower.includes('history') || lower.includes('monument') || lower.includes('fort') || lower.includes('tomb');
     const wantsHidden = lower.includes('hidden') || lower.includes('offbeat') || lower.includes('uncrowded');
 
-    const replacement = findVerifiedCatalogCandidate(trimmed, activeItinerary, p => {
+    // Avoid picking the exact target stop we are removing when searching by keyword
+    const replacementQuery =
+      trimmed.includes(' with ') ? trimmed.split(/ with /i)[1] : trimmed.includes(' for ') ? trimmed.split(/ for /i)[1] : '';
+
+    const replacement = findVerifiedCatalogCandidate(replacementQuery, activeItinerary, p => {
       if (p.id === stopToReplace?.placeId) return false;
+      if (wantsCafe) return p.category === 'Food' || Boolean(p.isMealStop);
       if (wantsNature) return p.category === 'Nature';
       if (wantsFood) return p.category === 'Food' || p.category === 'Shopping';
+      if (wantsHeritage) return p.category === 'Heritage';
       if (wantsHidden) return p.enrichment?.crowdLevel === 'low_offbeat';
+      if (stopToReplace?.category === 'Food' || stopToReplace?.isMealStop) {
+        return p.category === 'Food' || Boolean(p.isMealStop);
+      }
       return !p.isMealStop;
     });
 
@@ -680,7 +982,17 @@ export function processTripAssistantMessage(
     }
     dayPlacesMap.set(targetDay, updatedDayPlaces);
 
-    const updatedItinerary = rebuildItineraryWithUpdatedDays(activeItinerary, dayPlacesMap, dayPacesMap);
+    const newExcluded = Array.from(
+      new Set([...(activeItinerary.tripConfig?.excludedPlaceIds || []), stopToReplace.placeId])
+    );
+    const updatedItinerary = rebuildItineraryWithUpdatedDays(activeItinerary, dayPlacesMap, dayPacesMap, {
+      excludedPlaceIds: newExcluded
+    });
+
+    persistTripItineraryToDatabase({
+      tripId: updatedItinerary.tripId,
+      itinerary: updatedItinerary as any
+    });
 
     return {
       reply: `Swapped **${stopToReplace.name}** on **Day ${targetDay}** with **${replacement.name}** (*${replacement.subcategory || replacement.category}*, verified via ${replacement.originalData?.source || replacement.officialSource || 'Journeo Catalog'}) and updated Day ${targetDay}'s schedule.`,
@@ -689,6 +1001,8 @@ export function processTripAssistantMessage(
         dayNumber: targetDay,
         placeId: stopToReplace.placeId,
         replacementPlaceId: replacement.id,
+        removePlaceId: stopToReplace.placeId,
+        addPlaceId: replacement.id,
         summary: `Replaced ${stopToReplace.name} with ${replacement.name} on Day ${targetDay}`
       },
       modified: true,
@@ -696,9 +1010,11 @@ export function processTripAssistantMessage(
       updatedContext: {
         lastReferencedDayNumber: targetDay,
         lastReferencedPlaceId: replacement.id,
-        lastActionType: 'replace_place'
+        lastActionType: 'replace_place',
+        lastTopic: wantsCafe ? 'cafes' : wantsFood ? 'food' : context.lastTopic
       },
-      suggestions: [`Why was ${replacement.name.split('(')[0].trim()} selected?`, `Make Day ${targetDay} more relaxed`]
+      suggestions: [`Why was ${replacement.name.split('(')[0].trim()} selected?`, `Make Day ${targetDay} more relaxed`],
+      persistedToDatabase: true
     };
   }
 
@@ -709,6 +1025,7 @@ export function processTripAssistantMessage(
     lower.includes('more relaxed') ||
     lower.includes('slower pace') ||
     lower.includes('relax ') ||
+    lower.includes('relaxed') ||
     lower.includes('unhurried') ||
     lower.includes('packed pace') ||
     lower.includes('more packed') ||
@@ -740,6 +1057,11 @@ export function processTripAssistantMessage(
       travelPace: resolvedDay ? activeItinerary.tripConfig?.travelPace : newPace
     });
 
+    persistTripItineraryToDatabase({
+      tripId: updatedItinerary.tripId,
+      itinerary: updatedItinerary as any
+    });
+
     const actionType: TripAssistantActionType = lower.includes('shorten') ? 'shorten_day' : 'change_day_pace';
     return {
       reply: `Updated **Day ${targetDay}** to a **${newPace}** pace${trimmedCountNote}! Visit durations have been extended by 25% with extra breathing room between stops.`,
@@ -753,18 +1075,20 @@ export function processTripAssistantMessage(
       updatedItinerary,
       updatedContext: {
         lastReferencedDayNumber: targetDay,
-        lastActionType: actionType
+        lastActionType: actionType,
+        lastTopic: context.lastTopic
       },
       suggestions: [
         `Add a local cafe to Day ${targetDay}`,
         `What is on Day ${targetDay} now?`,
         `Avoid crowded tourist places`
-      ]
+      ],
+      persistedToDatabase: true
     };
   }
 
   // ============================================================================
-  // CASE 7: ADD A PLACE OR CATEGORY TO A DAY ("Add a cafe near Day 1 evening", "Add a sunset point", "Add Eiffel Tower")
+  // CASE 7: ADD A PLACE OR CATEGORY TO A DAY ("Add a cafe near Day 1 evening", "Add a heritage place", "Add Eiffel Tower")
   // ============================================================================
   if (
     lower.startsWith('add ') ||
@@ -830,6 +1154,8 @@ export function processTripAssistantMessage(
       lower.includes('beach') ||
       lower.includes('temple') ||
       lower.includes('heritage') ||
+      lower.includes('historical') ||
+      lower.includes('architecture') ||
       lower.includes('monument') ||
       lower.includes('hidden gem') ||
       lower.includes('quiet') ||
@@ -846,6 +1172,9 @@ export function processTripAssistantMessage(
       }
       if (lower.includes('street food') || lower.includes('food') || lower.includes('chaat')) {
         return p.category === 'Food' || Boolean(p.isMealStop);
+      }
+      if (lower.includes('heritage') || lower.includes('historical') || lower.includes('monument') || lower.includes('architecture')) {
+        return p.category === 'Heritage';
       }
       if (lower.includes('market') || lower.includes('bazaar') || lower.includes('shopping')) {
         return (
@@ -866,7 +1195,6 @@ export function processTripAssistantMessage(
       return true;
     });
 
-    // If user typed a specific place name (not a generic category) and it didn't match any place in the city catalog, reject safely!
     const specificallyMatchedByName =
       candidate &&
       (lower.includes(candidate.name.split('(')[0].trim().toLowerCase()) ||
@@ -879,10 +1207,8 @@ export function processTripAssistantMessage(
           .some(w => lower.includes(w)));
 
     if (!isGenericCategoryRequest && !specificallyMatchedByName) {
-      const cityCatalogNames = INDIA_DESTINATIONS.filter(
-        d => d.city.toLowerCase() === city.toLowerCase()
-      )
-        .slice(0, 4)
+      const cityCatalogNames = queryPlacesByDestination(city)
+        .places.slice(0, 4)
         .map(d => d.name.split('(')[0].trim())
         .join(', ');
 
@@ -906,16 +1232,23 @@ export function processTripAssistantMessage(
     if (candidate) {
       const currentDayPlaces = dayPlacesMap.get(targetDay) || [];
       if (!currentDayPlaces.some(p => p.id === candidate.id)) {
-        dayPlacesMap.set(targetDay, [...currentDayPlaces, candidate]);
+        const trimmedExisting = currentDayPlaces.length >= 4 ? currentDayPlaces.slice(0, 3) : currentDayPlaces;
+        dayPlacesMap.set(targetDay, [candidate, ...trimmedExisting]);
       }
 
       const updatedItinerary = rebuildItineraryWithUpdatedDays(activeItinerary, dayPlacesMap, dayPacesMap);
+      persistTripItineraryToDatabase({
+        tripId: updatedItinerary.tripId,
+        itinerary: updatedItinerary as any
+      });
+
       return {
         reply: `Added **${candidate.name}** (*${candidate.subcategory || candidate.category}*, verified via ${candidate.originalData?.source || candidate.officialSource || 'Journeo Catalog'}) to **Day ${targetDay}** and re-optimized the route and timings!`,
         action: {
           type: 'add_place',
           dayNumber: targetDay,
           placeId: candidate.id,
+          addPlaceId: candidate.id,
           summary: `Added ${candidate.name} to Day ${targetDay}`
         },
         modified: true,
@@ -923,19 +1256,53 @@ export function processTripAssistantMessage(
         updatedContext: {
           lastReferencedDayNumber: targetDay,
           lastReferencedPlaceId: candidate.id,
-          lastActionType: 'add_place'
+          lastActionType: 'add_place',
+          lastTopic: candidate.category === 'Food' ? 'food' : candidate.category === 'Heritage' ? 'heritage' : context.lastTopic
         },
         suggestions: [
           `Why was ${candidate.name.split('(')[0].trim()} selected?`,
           `Make Day ${targetDay} more relaxed`
-        ]
+        ],
+        persistedToDatabase: true
       };
     }
   }
 
   // ============================================================================
-  // CASE 8: WHOLE-TRIP PREFERENCE / THEME RE-OPTIMIZATION
-  // ("Avoid crowded tourist places", "Focus more on street food, markets, and cafes", "No museums")
+  // CASE 7.5: EXPLICIT RE-OPTIMIZE ITINERARY ("Reoptimize the itinerary", "Re-optimize my route")
+  // ============================================================================
+  if (
+    lower.includes('reoptimize') ||
+    lower.includes('re-optimize') ||
+    lower.includes('optimize route') ||
+    lower.includes('reorder stops')
+  ) {
+    const updatedItinerary = rebuildItineraryWithUpdatedDays(activeItinerary, dayPlacesMap, dayPacesMap);
+    persistTripItineraryToDatabase({
+      tripId: updatedItinerary.tripId,
+      itinerary: updatedItinerary as any
+    });
+
+    return {
+      reply: `Re-optimized all ${totalDays} day(s) of your **${city}** itinerary using 2-Opt route refinement and opening-hours validation! Total travel distance is now **${updatedItinerary.plan.totalDistanceKm} km**.`,
+      action: {
+        type: 'reoptimize_itinerary',
+        summary: `Re-optimized ${city} multi-day route and stop sequence`
+      },
+      modified: true,
+      updatedItinerary,
+      updatedContext: {
+        ...context,
+        lastActionType: 'reoptimize_itinerary'
+      },
+      suggestions: ['Make Day 1 more relaxed', 'How much does this trip cost?'],
+      persistedToDatabase: true
+    };
+  }
+
+  // ============================================================================
+  // CASE 8: MULTI-TURN CONTEXT FOLLOW-UP ("Make them local.", "Make them street food.")
+  // & WHOLE-TRIP PREFERENCE / THEME RE-OPTIMIZATION
   // ============================================================================
   const currentConfig: TripOptimizationRequest = {
     ...(activeItinerary.tripConfig || {}),
@@ -945,20 +1312,53 @@ export function processTripAssistantMessage(
   };
 
   let prefSummaryParts: string[] = [];
+  let updatedTopic: AssistantConversationContext['lastTopic'] = context.lastTopic;
   const newInterests = new Set<string>(currentConfig.selectedInterests || []);
   const newExclCats = new Set<string>(currentConfig.excludedCategories || []);
+
+  // Multi-turn follow-up resolution: e.g. Turn 1: "I want more food experiences." -> Turn 2: "Make them local."
+  if (
+    (context.lastTopic === 'food' || context.lastTopic === 'cafes') &&
+    (lower.includes('make them local') ||
+      lower.includes('local ones') ||
+      lower.includes('more local') ||
+      lower.includes('authentic local') ||
+      lower.includes('traditional') ||
+      lower.includes('street food'))
+  ) {
+    newInterests.add('Food and Local Culture');
+    newInterests.add('Local Experiences');
+    currentConfig.foodStyle = 'local_cuisine';
+    currentConfig.experienceTypes = ['local_cuisine', 'street_food', 'markets_bazaars', 'local_culture'];
+    // Exclude modern western-style coffee roasteries when user specifically asks for "local" food experiences
+    const modernCafeIds = queryPlacesByDestination(city)
+      .places.filter(
+        p =>
+          (p.category === 'Food' || p.isMealStop) &&
+          p.mealType === 'cafe' &&
+          !(p.enrichment?.experienceTypes || []).includes('local_cuisine')
+      )
+      .map(p => p.id);
+    currentConfig.excludedPlaceIds = Array.from(
+      new Set([...(currentConfig.excludedPlaceIds || []), ...modernCafeIds])
+    );
+    prefSummaryParts.push('authentic local street food, traditional dining & heritage bazaars');
+    updatedTopic = 'food';
+  }
 
   if (lower.includes('avoid crowd') || lower.includes('no crowd') || lower.includes('hidden gem') || lower.includes('offbeat') || lower.includes('less touristy')) {
     currentConfig.crowdPreference = 'avoid_crowded';
     currentConfig.discoveryPreference = 'hidden_gems';
     newInterests.add('Hidden Gems');
     prefSummaryParts.push('uncrowded hidden gems & offbeat places');
+    updatedTopic = 'hidden_gems';
   }
 
   if (lower.includes('food') || lower.includes('cafe') || lower.includes('street food') || lower.includes('culinary')) {
     newInterests.add('Food and Local Culture');
-    currentConfig.foodStyle = lower.includes('cafe') ? 'cafes' : 'street_food';
-    prefSummaryParts.push('local street food & artisanal cafes');
+    currentConfig.foodStyle = lower.includes('cafe') ? 'cafes' : lower.includes('local') ? 'local_cuisine' : 'street_food';
+    prefSummaryParts.push('local street food, culinary landmarks & cafes');
+    updatedTopic = lower.includes('cafe') ? 'cafes' : 'food';
   }
 
   if (lower.includes('market') || lower.includes('bazaar') || lower.includes('shopping')) {
@@ -970,16 +1370,24 @@ export function processTripAssistantMessage(
   if (lower.includes('nature') || lower.includes('peaceful') || lower.includes('garden') || lower.includes('green')) {
     newInterests.add('Nature and Landscapes');
     prefSummaryParts.push('peaceful nature & gardens');
+    updatedTopic = 'nature';
   }
 
   if (lower.includes('history') || lower.includes('heritage') || lower.includes('architecture') || lower.includes('monument')) {
     newInterests.add('Historical Monuments');
     prefSummaryParts.push('historical monuments & architecture');
+    updatedTopic = 'heritage';
   }
 
   if (lower.includes('no museum') || lower.includes('avoid museum') || lower.includes('without museum') || lower.includes('skip museum')) {
     newExclCats.add('Museum');
     prefSummaryParts.push('excluding museums');
+  }
+
+  if (lower.includes('no cafe') || lower.includes('avoid cafe') || lower.includes('without cafe') || lower.includes('exclude cafe')) {
+    newExclCats.add('Cafe');
+    newExclCats.add('Cafes');
+    prefSummaryParts.push('excluding cafes');
   }
 
   if (prefSummaryParts.length > 0) {
@@ -990,6 +1398,11 @@ export function processTripAssistantMessage(
     const reoptimized = generateOptimizedItinerary(currentConfig);
     reoptimized.tripId = activeItinerary.tripId; // preserve active trip ID for persistence
 
+    persistTripItineraryToDatabase({
+      tripId: reoptimized.tripId,
+      itinerary: reoptimized as any
+    });
+
     const newStopNames = reoptimized.stops
       .slice(0, 4)
       .map(s => s.name.split('(')[0].trim())
@@ -998,7 +1411,7 @@ export function processTripAssistantMessage(
     return {
       reply: `Re-optimized your **${city}** itinerary for **${prefSummaryParts.join(', ')}**! Your updated route now features: **${newStopNames}**, with all timings and distances recalculated.`,
       action: {
-        type: 'change_preferences',
+        type: 'update_preferences',
         preferences: {
           addInterests: Array.from(newInterests),
           excludedCategories: Array.from(newExclCats),
@@ -1007,25 +1420,32 @@ export function processTripAssistantMessage(
           foodStyle: currentConfig.foodStyle,
           freeTextAppend: trimmed
         },
-        summary: `Re-optimized itinerary for ${prefSummaryParts.join(', ')}`
+        preferenceChanges: {
+          selectedInterests: Array.from(newInterests),
+          excludedCategories: Array.from(newExclCats),
+          foodStyle: currentConfig.foodStyle
+        },
+        summary: `Updated preferences and re-optimized itinerary for ${prefSummaryParts.join(', ')}`
       },
       modified: true,
       updatedItinerary: reoptimized,
       updatedContext: {
         lastReferencedDayNumber: resolvedDay || 1,
-        lastActionType: 'change_preferences'
+        lastActionType: 'update_preferences',
+        lastTopic: updatedTopic
       },
       suggestions: [
+        'Make them local',
         'Make Day 1 more relaxed',
-        'How much does this trip cost now?',
-        'What is on Day 1?'
-      ]
+        'How much does this trip cost now?'
+      ],
+      persistedToDatabase: true
     };
   }
 
   // Fallback helpful response if intent was conversational
   return {
-    reply: `I can modify your **${city}** itinerary right away! Try asking me to:\n• *"Remove the museum from Day 2"*\n• *"Make that day more relaxed"*\n• *"Add a local cafe or bazaar to Day 1"*\n• *"Avoid crowded tourist places and focus on hidden gems"*\n• *"How much does this trip cost?"*`,
+    reply: `I can modify your **${city}** itinerary right away! Try asking me to:\n• *"Remove the museum from Day 2"*\n• *"Make that day more relaxed"*\n• *"I don't like these cafes. Show me different ones."*\n• *"I want more food experiences."* → *"Make them local."*\n• *"Reoptimize my itinerary"*`,
     action: {
       type: 'clarify_request',
       summary: 'Provided actionable itinerary assistant examples'
@@ -1033,8 +1453,8 @@ export function processTripAssistantMessage(
     modified: false,
     updatedContext: context,
     suggestions: [
-      'Avoid crowded tourist places',
-      'Focus more on street food and local markets',
+      'I want more food experiences',
+      "I don't like these cafes. Show me different ones.",
       'Make Day 1 more relaxed'
     ]
   };

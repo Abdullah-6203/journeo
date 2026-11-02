@@ -1,4 +1,5 @@
 import { IndiaDestination, INDIA_DESTINATIONS } from '../../../data/indiaDestinations';
+import { queryPlacesByDestination } from '../../../services/placeDatabaseService';
 import {
   CanonicalDestination,
   resolveCanonicalDestination,
@@ -420,6 +421,17 @@ export function parseFreeTextPreferences(text?: string): ParsedNLPPreferences {
     matchedSignals.push('avoiding nightlife');
   }
 
+  const cafeNegative =
+    /(?:no|avoid|skip|without|exclude|don't\s+want|dont\s+want|dislike)\s+(?:any\s+)?(?:cafes?|coffee\s+shops?|coffee\s+houses?)/i.test(lower) ||
+    lower.includes('no cafes') ||
+    lower.includes('avoid cafes') ||
+    lower.includes('exclude cafes');
+  if (cafeNegative) {
+    result.excludedSubcategories.push('Cafe', 'Cafes');
+    result.avoidKeywords.push('cafe', 'coffee house', 'roastery');
+    matchedSignals.push('excluding cafes');
+  }
+
   // 3. Crowd avoidance & Hidden gems detection
   if (
     lower.includes('avoid crowd') ||
@@ -459,18 +471,19 @@ export function parseFreeTextPreferences(text?: string): ParsedNLPPreferences {
   // 4. Positive Category & Experience Matching
   // Food / Street Food / Cafes / Culinary
   if (
-    lower.includes('food') ||
-    lower.includes('street food') ||
-    lower.includes('culinary') ||
-    lower.includes('cafe') ||
-    lower.includes('coffee') ||
-    lower.includes('bakery') ||
-    lower.includes('chai') ||
-    lower.includes('thali') ||
-    lower.includes('chaat') ||
-    lower.includes('paratha') ||
-    lower.includes('eater') ||
-    lower.includes('dining')
+    !cafeNegative &&
+    (lower.includes('food') ||
+      lower.includes('street food') ||
+      lower.includes('culinary') ||
+      lower.includes('cafe') ||
+      lower.includes('coffee') ||
+      lower.includes('bakery') ||
+      lower.includes('chai') ||
+      lower.includes('thali') ||
+      lower.includes('chaat') ||
+      lower.includes('paratha') ||
+      lower.includes('eater') ||
+      lower.includes('dining'))
   ) {
     result.boostCategories.push('Food');
     result.foodPriority = true;
@@ -605,6 +618,12 @@ export function parseFreeTextPreferences(text?: string): ParsedNLPPreferences {
 export interface ScoredCandidate {
   place: IndiaDestination;
   totalScore: number;
+  // Phase 8 Explicit 5-Signal Ranking Separation
+  providerRating: number;
+  popularityScore: number;
+  relevanceScore: number;
+  scheduleSuitability: number;
+  dataConfidence: number;
   breakdown: {
     interestMatch: number;
     experienceMatch: number;
@@ -694,6 +713,32 @@ export function scoreCandidatePlaces(
     (typeof request.budget === 'number' && request.budget > 0 && request.budget <= 8000) ||
     (request.budgetConfig?.enabled && (request.budgetConfig?.amount || 0) <= 8000);
 
+  const isHistoryFocused =
+    (nlp.historyPriority ||
+      interests.some(i => i.includes('history') || i.includes('heritage') || i.includes('architecture')) ||
+      requestedExperiences.some(
+        e => e.includes('history') || e.includes('architecture') || e.includes('monument') || e.includes('unesco')
+      )) &&
+    !nlp.foodPriority &&
+    !nlp.naturePriority &&
+    !interests.some(i => i.includes('food') || i.includes('nature'));
+
+  const isFoodFocused =
+    nlp.foodPriority ||
+    Boolean(request.foodStyle) ||
+    interests.some(i => i.includes('food') || i.includes('cafe') || i.includes('culinary')) ||
+    requestedExperiences.some(
+      e => e.includes('food') || e.includes('cafe') || e.includes('bakery') || e.includes('dining')
+    );
+
+  const isNatureFocused =
+    (nlp.naturePriority ||
+      interests.some(i => i.includes('nature') || i.includes('garden') || i.includes('wildlife') || i.includes('eco')) ||
+      requestedExperiences.some(e => e.includes('nature') || e.includes('park') || e.includes('garden'))) &&
+    !nlp.historyPriority &&
+    !nlp.foodPriority &&
+    !interests.some(i => i.includes('history') || i.includes('food'));
+
   return candidates.map(place => {
     const placeTagsLower = place.interestTags.map(t => t.toLowerCase());
     const placeExpLower = (place.enrichment?.experienceTypes || []).map(e => e.toLowerCase());
@@ -723,10 +768,9 @@ export function scoreCandidatePlaces(
       if (
         userInt.includes(place.category.toLowerCase()) ||
         place.category.toLowerCase().includes(userInt) ||
-        placeTagsLower.some(t => t.includes(userInt) || userInt.includes(t)) ||
         placeExpLower.some(e => e.includes(userInt) || userInt.includes(e)) ||
         (userInt.includes('history') && place.category === 'Heritage') ||
-        (userInt.includes('architecture') && (place.category === 'Heritage' || placeText.includes('architect'))) ||
+        (userInt.includes('architecture') && place.category === 'Heritage') ||
         (userInt.includes('nature') && place.category === 'Nature') ||
         (userInt.includes('peaceful') && (place.category === 'Nature' || placeCrowdLevel === 'low_offbeat')) ||
         (userInt.includes('food') && (place.category === 'Food' || place.isMealStop)) ||
@@ -741,7 +785,7 @@ export function scoreCandidatePlaces(
     }
 
     if (matchedInterests.length > 0) {
-      interestMatch = Math.min(60, 38 + matchedInterests.length * 12);
+      interestMatch = Math.min(70, 42 + matchedInterests.length * 14);
       const cleanLabel = matchedInterests[0]
         .replace(/_/g, ' ')
         .replace(/\b\w/g, c => c.toUpperCase());
@@ -751,7 +795,34 @@ export function scoreCandidatePlaces(
       });
     } else if (interests.length > 0) {
       // Non-matching category when user has specific interests gets a strong penalty so we don't return generic monuments
-      interestMatch = -22;
+      interestMatch = -38;
+    }
+
+    // Decisive Primary Domain Alignment (Ensures Relevance strongly outweighs Popularity across profiles)
+    if (isHistoryFocused) {
+      if (place.category === 'Heritage') {
+        interestMatch += 45;
+      } else if (!(effectiveCrowdPref === 'avoid_crowded' && placeCrowdLevel === 'low_offbeat')) {
+        interestMatch -= 55;
+      }
+    }
+
+    if (isFoodFocused) {
+      if (place.category === 'Food' || place.isMealStop) {
+        experienceMatch += 65;
+      } else if (place.category === 'Shopping' || placeSubcatLower.includes('market') || placeSubcatLower.includes('bazaar')) {
+        experienceMatch += 35;
+      } else {
+        interestMatch -= 65;
+      }
+    }
+
+    if (isNatureFocused) {
+      if (place.category === 'Nature') {
+        interestMatch += 60;
+      } else {
+        interestMatch -= 55;
+      }
     }
 
     // 2. Experience Type & Food Style Matching
@@ -911,20 +982,22 @@ export function scoreCandidatePlaces(
       });
     }
 
-    // 8. Place Quality & Provenance (Kept modest so it never overrides user preferences)
-    let qualityScore = 15;
-    if (place.originalData?.verificationStatus === 'verified_official') {
-      qualityScore += 8;
-    } else if (place.originalData?.verificationStatus === 'verified_community') {
-      qualityScore += 5;
-    }
-    if (place.officialSource && place.officialSource.includes('UNESCO')) {
-      qualityScore += 8;
-    }
+    // 8. Place Quality & Provenance w_r * R(p) (Kept strictly capped <= 12 so Relevance > Popularity)
+    const providerRating = typeof place.rating === 'number' ? place.rating : place.isMustVisit ? 4.7 : 4.5;
+    const popularityScore = typeof place.popularityScore === 'number' ? place.popularityScore : place.isMustVisit ? 92 : 82;
+    const dataConfidence = place.enrichment?.dataConfidence ?? (place.originalData?.verificationStatus === 'verified_official' ? 0.98 : 0.94);
 
-    // 9. Geographic Proximity (Kept modest to break ties rather than dominate selection)
+    let qualityScore = Math.round((providerRating - 3.5) * 6); // ~6 to 8 pts
+    if (place.originalData?.verificationStatus === 'verified_official') {
+      qualityScore += 3;
+    } else if (place.originalData?.verificationStatus === 'verified_community') {
+      qualityScore += 2;
+    }
+    qualityScore = Math.min(12, Math.max(4, qualityScore));
+
+    // 9. Geographic Proximity & Schedule Suitability w_g * G(p, u)
     const dist = haversineDistanceKm(startLat, startLng, place.latitude, place.longitude);
-    const geographicScore = Math.max(2, Math.round(18 - dist * 0.6));
+    const geographicScore = Math.max(2, Math.round(16 - dist * 0.6));
 
     // 10. Dietary Suitability
     let dietaryBonus = 0;
@@ -948,12 +1021,23 @@ export function scoreCandidatePlaces(
       }
     }
 
-    // Controlled deterministic tie-breaking variance
+    // Controlled deterministic tie-breaking & rotation variance across consecutive runs
     const pseudoHash = place.id.split('').reduce((acc, char, idx) => acc + char.charCodeAt(0) * (idx + 1), 0);
-    const variationOffset = seed > 0 ? (((pseudoHash * 13 + seed * 37) % 19) - 9) : (pseudoHash % 5);
+    const variationOffset =
+      seed > 0
+        ? (place.category === 'Food' || place.isMealStop)
+          ? (((pseudoHash * 31 + seed * 59) % 65) - 30)
+          : (((pseudoHash * 17 + seed * 43) % 27) - 12)
+        : (pseudoHash % 5);
+
+    const relevanceScore = Math.max(
+      0,
+      Math.round(25 + interestMatch + experienceMatch + freeTextMatch + crowdAndNoveltyMatch + dietaryBonus + budgetBonus)
+    );
+    const scheduleSuitability = geographicScore;
 
     const rawTotal =
-      30 + // baseline
+      28 + // baseline
       interestMatch +
       experienceMatch +
       freeTextMatch +
@@ -964,7 +1048,7 @@ export function scoreCandidatePlaces(
       budgetBonus +
       variationOffset;
 
-    const totalScore = Math.min(100, Math.max(5, Math.round(rawTotal)));
+    const totalScore = Math.max(5, Math.round(rawTotal));
 
     // Pick the highest-scoring grounded reason
     reasonCandidates.sort((a, b) => b.score - a.score);
@@ -977,6 +1061,11 @@ export function scoreCandidatePlaces(
     return {
       place,
       totalScore,
+      providerRating,
+      popularityScore,
+      relevanceScore,
+      scheduleSuitability,
+      dataConfidence,
       breakdown: {
         interestMatch,
         experienceMatch,
@@ -1073,6 +1162,9 @@ export function optimizeRouteWith2Opt(
 // STAGE 7 & 8: DAILY TIME SCHEDULING WITH MEAL BREAKS & TIME FEASIBILITY
 // ============================================================================
 
+// Module-level rotation counter for consecutive food/cafe-focused itinerary generations
+let foodRunRotationCounter = 0;
+
 export function scheduleDayStops(
   orderedPlaces: IndiaDestination[],
   dayNumber: number,
@@ -1084,7 +1176,10 @@ export function scheduleDayStops(
   dayStartTimeOverride?: string,
   dayEndCutoffOverride?: string,
   scoredLookup: Map<string, ScoredCandidate> = new Map(),
-  dayPaceOverride?: 'relaxed' | 'balanced' | 'packed'
+  dayPaceOverride?: 'relaxed' | 'balanced' | 'packed',
+  tripWideUsedPlaceIds: Set<string> = new Set(),
+  allowMealInjection = false,
+  mealRotationOffset = 0
 ): { stops: ItineraryStopOutput[]; dayMetrics: { travelMin: number; visitMin: number; distanceKm: number } } {
   const pace = dayPaceOverride || request.travelPace || 'balanced';
   const defaultStartByPace = pace === 'relaxed' ? '09:30' : pace === 'packed' ? '08:30' : '09:00';
@@ -1105,34 +1200,45 @@ export function scheduleDayStops(
   let totalDistanceKm = 0;
 
   const stops: ItineraryStopOutput[] = [];
-  const scheduledPlaceIdsOnDay = new Set<string>(orderedPlaces.map(p => p.id));
+  orderedPlaces.forEach(p => tripWideUsedPlaceIds.add(p.id));
 
-  // Determine if orderedPlaces already includes a food/meal stop around midday
+  // Determine if orderedPlaces already includes a food/meal stop
   let lunchScheduled = orderedPlaces.some(p => p.category === 'Food' || p.isMealStop);
 
-  // Check if early start calls for breakfast (starts on or before 09:15) and breakfast isn't already in orderedPlaces
   const effectiveCrowdForMeal =
     request.crowdPreference || (request.discoveryPreference === 'hidden_gems' ? 'avoid_crowded' : 'balanced');
 
-  const breakfastCandidate = [...availableFoodSpots]
-    .filter(f => {
-      if (f.mealType !== 'breakfast' || scheduledPlaceIdsOnDay.has(f.id)) return false;
-      if (effectiveCrowdForMeal === 'avoid_crowded' && f.enrichment?.crowdLevel === 'high_popular') {
-        return false;
-      }
-      return true;
-    })
-    .sort((a, b) =>
-      isLowBudget
-        ? (a.averageCostPerPersonINR || 300) - (b.averageCostPerPersonINR || 300)
-        : 0
-    )[0];
+  const breakfastPool = allowMealInjection
+    ? [...availableFoodSpots]
+        .filter(f => {
+          if ((f.mealType !== 'breakfast' && f.mealType !== 'cafe') || tripWideUsedPlaceIds.has(f.id)) return false;
+          if (effectiveCrowdForMeal === 'avoid_crowded' && f.enrichment?.crowdLevel === 'high_popular') {
+            return false;
+          }
+          return true;
+        })
+        .sort((a, b) => {
+          if (isLowBudget) {
+            return (a.averageCostPerPersonINR || 300) - (b.averageCostPerPersonINR || 300);
+          }
+          const scoreA = scoredLookup.get(a.id)?.totalScore ?? 70;
+          const scoreB = scoredLookup.get(b.id)?.totalScore ?? 70;
+          return scoreB - scoreA;
+        })
+    : [];
+
+  const breakfastCandidate =
+    breakfastPool.length > 0
+      ? breakfastPool[(dayNumber - 1 + mealRotationOffset) % breakfastPool.length]
+      : undefined;
 
   if (
+    allowMealInjection &&
     startClock <= 9 * 60 + 15 &&
     breakfastCandidate &&
     orderedPlaces.length > 0 &&
-    orderedPlaces[0].mealType !== 'breakfast'
+    orderedPlaces[0].mealType !== 'breakfast' &&
+    orderedPlaces[0].category !== 'Food'
   ) {
     const bDist = haversineDistanceKm(prevLat, prevLng, breakfastCandidate.latitude, breakfastCandidate.longitude);
     const bMode = selectLegTransportMode(
@@ -1179,7 +1285,7 @@ export function scheduleDayStops(
       averageCostINR: breakfastCandidate.averageCostPerPersonINR
     });
 
-    scheduledPlaceIdsOnDay.add(breakfastCandidate.id);
+    tripWideUsedPlaceIds.add(breakfastCandidate.id);
     currentMin += bDwell;
     prevLat = breakfastCandidate.latitude;
     prevLng = breakfastCandidate.longitude;
@@ -1206,19 +1312,27 @@ export function scheduleDayStops(
     totalTravelMin += transitMin;
     currentMin += transitMin;
 
-    // INTELLIGENT LUNCH WINDOW SCHEDULING (Between 12:15 and 14:30 if no food stop is already in the primary pool)
-    if (!lunchScheduled && currentMin >= 12 * 60 + 15 && currentMin <= 14 * 60 + 30) {
-      const lunchCandidate = availableFoodSpots
-        .filter(f => (f.mealType === 'lunch' || f.category === 'Food') && !scheduledPlaceIdsOnDay.has(f.id))
+    // INTELLIGENT LUNCH WINDOW SCHEDULING (Only when meal injection is enabled and no food stop is already scheduled)
+    if (allowMealInjection && !lunchScheduled && currentMin >= 12 * 60 + 15 && currentMin <= 14 * 60 + 30) {
+      const lunchPool = availableFoodSpots
+        .filter(f => (f.mealType === 'lunch' || f.category === 'Food') && !tripWideUsedPlaceIds.has(f.id))
         .sort((a, b) => {
           if (isLowBudget) {
             const costDiff = (a.averageCostPerPersonINR || 400) - (b.averageCostPerPersonINR || 400);
             if (Math.abs(costDiff) > 150) return costDiff;
           }
+          const scoreA = scoredLookup.get(a.id)?.totalScore ?? 70;
+          const scoreB = scoredLookup.get(b.id)?.totalScore ?? 70;
+          if (Math.abs(scoreB - scoreA) > 8) return scoreB - scoreA;
           const dA = haversineDistanceKm(prevLat, prevLng, a.latitude, a.longitude);
           const dB = haversineDistanceKm(prevLat, prevLng, b.latitude, b.longitude);
           return dA - dB;
-        })[0];
+        });
+
+      const lunchCandidate =
+        lunchPool.length > 0
+          ? lunchPool[(dayNumber - 1 + mealRotationOffset) % lunchPool.length]
+          : undefined;
 
       if (lunchCandidate && currentMin + 75 <= cutoffClock) {
         const lDist = haversineDistanceKm(prevLat, prevLng, lunchCandidate.latitude, lunchCandidate.longitude);
@@ -1266,7 +1380,7 @@ export function scheduleDayStops(
           averageCostINR: lunchCandidate.averageCostPerPersonINR
         });
 
-        scheduledPlaceIdsOnDay.add(lunchCandidate.id);
+        tripWideUsedPlaceIds.add(lunchCandidate.id);
         currentMin = lArr + lDwell;
         prevLat = lunchCandidate.latitude;
         prevLng = lunchCandidate.longitude;
@@ -1493,12 +1607,20 @@ export function validateGeneratedItinerary(
       if (excludedIds.has(stop.placeId)) {
         errors.push(`Excluded place "${stop.name}" (${stop.placeId}) was included on Day ${day.dayNumber}.`);
       }
+      const stopSubcatLower = (stop.subcategory || '').toLowerCase();
+      const stopNameLower = stop.name.toLowerCase();
+      const isCafeStop =
+        stop.mealType === 'cafe' ||
+        stopSubcatLower.includes('cafe') ||
+        stopSubcatLower.includes('coffee') ||
+        stopNameLower.includes('cafe') ||
+        stopNameLower.includes('coffee house');
       if (
-        !stop.isMealStop &&
-        (excludedCats.has(stop.category.toLowerCase()) ||
-          (stop.subcategory && excludedCats.has(stop.subcategory.toLowerCase())))
+        excludedCats.has(stop.category.toLowerCase()) ||
+        (stopSubcatLower && excludedCats.has(stopSubcatLower)) ||
+        ((excludedCats.has('cafe') || excludedCats.has('cafes')) && isCafeStop)
       ) {
-        warnings.push(`Stop "${stop.name}" matches excluded category/subcategory (${stop.subcategory || stop.category}).`);
+        errors.push(`Stop "${stop.name}" matches excluded category/subcategory (${stop.subcategory || stop.category}).`);
       }
       if (
         typeof stop.coordinates?.lat !== 'number' ||
@@ -1621,10 +1743,13 @@ export function generateOptimizedItinerary(
     request.transportMode = 'public';
   }
 
-  // 1. Strict Candidate Retrieval & Validation (Target Destination Source of Truth)
+  // 1. Strict Candidate Retrieval & Validation from SQLite Database Source of Truth
+  const dbQueryResult = queryPlacesByDestination(canonical.destinationId);
   const rawPool =
     request.candidatePool && request.candidatePool.length > 0
       ? request.candidatePool
+      : dbQueryResult.places.length > 0
+      ? dbQueryResult.places
       : INDIA_DESTINATIONS.filter(
           d =>
             d.destinationId === canonical.destinationId ||
@@ -1646,22 +1771,7 @@ export function generateOptimizedItinerary(
   }
 
   // 2. Partition Sightseeing & Food Venues (Include Food/Cafes in Primary Pool when user is Food-Centric!)
-  const { foodCentric } = isFoodOrMarketCentricRequest(request, nlp);
-  const sightSeeingPool: IndiaDestination[] = [];
-  const foodSpots: IndiaDestination[] = [];
-
-  destinationCandidates.forEach((c: IndiaDestination) => {
-    if (c.isMealStop || c.category === 'Food') {
-      foodSpots.push(c);
-      // When the user explicitly asks for street food, cafes, or culinary experiences,
-      // include culinary landmarks directly in the primary candidate pool!
-      if (foodCentric) {
-        sightSeeingPool.push(c);
-      }
-    } else {
-      sightSeeingPool.push(c);
-    }
-  });
+  const { foodCentric, marketCentric } = isFoodOrMarketCentricRequest(request, nlp);
 
   // 3. Hard Constraints: Exclusions, Excluded Categories/Subcategories, Closed-Day & Accessibility Filtering
   const visitDate = request.startDate ? new Date(request.startDate) : null;
@@ -1675,11 +1785,56 @@ export function generateOptimizedItinerary(
     ...nlp.excludedSubcategories.map((c: string) => c.toLowerCase())
   ]);
 
+  const excludeCafes =
+    excludedCategoriesLower.has('cafe') ||
+    excludedCategoriesLower.has('cafes') ||
+    excludedCategoriesLower.has('coffee') ||
+    excludedCategoriesLower.has('food');
+
+  const isPlaceCafe = (c: IndiaDestination): boolean => {
+    const subLower = (c.subcategory || '').toLowerCase();
+    const nameLower = c.name.toLowerCase();
+    const expTypes = (c.enrichment?.experienceTypes || []).map(e => e.toLowerCase());
+    return (
+      c.mealType === 'cafe' ||
+      subLower.includes('cafe') ||
+      subLower.includes('coffee') ||
+      subLower.includes('roastery') ||
+      subLower.includes('bakery') ||
+      nameLower.includes('cafe') ||
+      nameLower.includes('coffee house') ||
+      (c.category === 'Food' && expTypes.includes('cafes') && !expTypes.includes('local_cuisine'))
+    );
+  };
+
+  const sightSeeingPool: IndiaDestination[] = [];
+  const foodSpots: IndiaDestination[] = [];
+
+  destinationCandidates.forEach((c: IndiaDestination) => {
+    if (excludedPlaceIds.has(c.id)) return;
+    if (excludeCafes && isPlaceCafe(c)) return;
+
+    if (c.isMealStop || c.category === 'Food') {
+      foodSpots.push(c);
+      // When the user explicitly asks for street food, cafes, markets, or culinary experiences,
+      // include culinary/bazaar landmarks directly in the primary candidate pool!
+      if ((foodCentric || (marketCentric && c.category === 'Shopping')) && !excludeCafes) {
+        sightSeeingPool.push(c);
+      } else if ((foodCentric || (marketCentric && c.category === 'Shopping')) && excludeCafes && !isPlaceCafe(c)) {
+        sightSeeingPool.push(c);
+      }
+    } else {
+      // If cafes are excluded, also ensure no sightseeing place with 'cafes' in its title is treated as a cafe
+      sightSeeingPool.push(c);
+    }
+  });
+
   const seenIds = new Set<string>();
   const seenNames = new Set<string>();
 
   let validSightseeing = sightSeeingPool.filter(c => {
     if (excludedPlaceIds.has(c.id)) return false;
+    if (excludeCafes && isPlaceCafe(c)) return false;
 
     // Hard exclusion for categories/subcategories (e.g. "no museums")
     const catLower = c.category.toLowerCase();
@@ -1710,15 +1865,48 @@ export function generateOptimizedItinerary(
   });
 
   if (validSightseeing.length < 2) {
-    validSightseeing = sightSeeingPool.filter(c => !excludedPlaceIds.has(c.id));
+    validSightseeing = sightSeeingPool.filter(c => !excludedPlaceIds.has(c.id) && !(excludeCafes && isPlaceCafe(c)));
   }
 
+  // Rotate food/cafe candidate selection across consecutive food-centric runs so the exact same cafe list is not repeated
+  const effectiveSeed =
+    typeof request.seedVariation === 'number'
+      ? request.seedVariation
+      : foodCentric
+      ? ++foodRunRotationCounter
+      : 0;
+
   // 4. Multi-Factor Personalized & Budget-Aware Scoring
-  const scored = scoreCandidatePlaces(validSightseeing, request, nlp, request.seedVariation || 0);
+  const scored = scoreCandidatePlaces(validSightseeing, request, nlp, effectiveSeed);
   scored.sort((a, b) => b.totalScore - a.totalScore);
 
+  // When foodCentric is active across multiple runs, cyclically rotate among the top food/cafe candidates so consecutive runs vary
+  if (foodCentric && effectiveSeed > 0) {
+    const foodAndCafeRanked = scored.filter(
+      sc =>
+        sc.place.category === 'Food' ||
+        sc.place.isMealStop ||
+        (sc.place.subcategory || '').toLowerCase().includes('cafe')
+    );
+    if (foodAndCafeRanked.length >= 2) {
+      const topScore = foodAndCafeRanked[0].totalScore;
+      foodAndCafeRanked.forEach((sc, idx) => {
+        const rotatedRank = (idx + effectiveSeed) % foodAndCafeRanked.length;
+        sc.totalScore = topScore + (foodAndCafeRanked.length - rotatedRank) * 14;
+      });
+      scored.sort((a, b) => b.totalScore - a.totalScore);
+    }
+  }
+
+  // Also score foodSpots so meal selection is preference-aware
+  const scoredFood = scoreCandidatePlaces(foodSpots, request, nlp, effectiveSeed);
   const scoredLookup = new Map<string, ScoredCandidate>();
   scored.forEach(sc => scoredLookup.set(sc.place.id, sc));
+  scoredFood.forEach(sc => {
+    if (!scoredLookup.has(sc.place.id)) {
+      scoredLookup.set(sc.place.id, sc);
+    }
+  });
 
   // 5. Pace-Aware & Diversity-Aware Candidate Selection
   // Relaxed: 2-3 primary stops/day; Balanced: 3-4 stops/day; Packed: 4-5 stops/day
@@ -1816,6 +2004,8 @@ export function generateOptimizedItinerary(
   // 8. Day-by-Day Route Optimization & Transport-Aware Scheduling
   const daysOutput: ItineraryDayOutput[] = [];
   const allStopsOutput: ItineraryStopOutput[] = [];
+  const tripWideUsedPlaceIds = new Set<string>();
+  const allowMealInjection = foodCentric && !excludeCafes;
 
   let grandTotalDistanceKm = 0;
   let grandTotalDurationMin = 0;
@@ -1863,7 +2053,7 @@ export function generateOptimizedItinerary(
     // 2-Opt TSP route ordering
     const route = optimizeRouteWith2Opt(dayPlaces, startLat, startLng);
 
-    // Schedule stops including meal breaks
+    // Schedule stops with trip-wide anti-repetition & preference-aware meal rotation
     const { stops, dayMetrics } = scheduleDayStops(
       route,
       d + 1,
@@ -1875,7 +2065,10 @@ export function generateOptimizedItinerary(
       dayStartTimeOverride,
       dayEndCutoffOverride,
       scoredLookup,
-      effectivePace
+      effectivePace,
+      tripWideUsedPlaceIds,
+      allowMealInjection,
+      effectiveSeed
     );
 
     const primaryArea = customAreaTitle || dayPlaces[0]?.area || `${targetCity} Circuit`;
@@ -1994,3 +2187,5 @@ export function generateOptimizedItinerary(
 
   return response;
 }
+
+export const generatePersonalizedItinerary = generateOptimizedItinerary;

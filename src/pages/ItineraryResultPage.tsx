@@ -85,19 +85,19 @@ export const ItineraryResultPage: React.FC = () => {
 
   const handleSaveTrip = async () => {
     if (!user) {
-      alert('Please log in or sign up to save your trip to your profile.');
+      alert('Please log in or click Quick Demo Login to save your trip.');
       return;
     }
     setSaving(true);
     try {
       const config = itineraryData?.tripConfig || {};
       const payload = {
-        title: itineraryData?.title || 'Delhi Royal Heritage Circuit',
-        destinationCity: itineraryData?.destinationCity || 'Delhi',
+        title: itineraryData?.title || `${itineraryData?.destinationCity || 'India'} Personalised Circuit`,
+        destinationCity: itineraryData?.destinationCity || config.city || 'India',
         startDate: config.startDate || new Date().toISOString().split('T')[0],
         endDate: config.startDate || new Date().toISOString().split('T')[0],
-        startingLocation: config.startingLocation || 'Connaught Place, Central Delhi',
-        budget: config.budget || 2500,
+        startingLocation: config.startingLocation || 'City Centre',
+        budget: config.budget || 3000,
         groupSize: config.groupSize || 2,
         transportation: config.transportation || 'cab',
         travelStyle: config.travelStyle || 'balanced',
@@ -106,8 +106,9 @@ export const ItineraryResultPage: React.FC = () => {
         totalDistanceKm: itineraryData?.plan?.totalDistanceKm || 20.9,
         totalDurationMin: itineraryData?.plan?.totalDurationMin || 420,
         stops: stops.map((s, idx) => ({
-          destinationId: s.destinationId || s.destination?.id,
+          destinationId: s.destinationId || s.destination?.id || `dest-${idx + 1}`,
           sequenceNumber: idx + 1,
+          destination: s.destination || { name: s.destinationId || `Stop ${idx + 1}`, imageUrl: '' },
           plannedArrival: s.plannedArrival,
           plannedDeparture: s.plannedDeparture,
           visitDuration: s.visitDuration,
@@ -119,9 +120,26 @@ export const ItineraryResultPage: React.FC = () => {
         }))
       };
 
-      const res = await api.createTrip(payload);
+      // Always save to localStorage so My Trips is populated immediately
+      const savedTrips = JSON.parse(localStorage.getItem('journeo_saved_trips') || '[]');
+      const newTripRecord = {
+        id: 'trip_' + Date.now(),
+        ...payload,
+        createdAt: new Date().toISOString()
+      };
+      localStorage.setItem('journeo_saved_trips', JSON.stringify([newTripRecord, ...savedTrips.filter((t: any) => t.title !== payload.title)]));
+
+      // Attempt backend persistence if available
+      try {
+        const res = await api.createTrip(payload);
+        if (res?.trip) {
+          sessionStorage.setItem('journeo_active_trip', JSON.stringify(res.trip));
+        }
+      } catch (backendErr) {
+        console.warn('Backend API save skipped, saved locally:', backendErr);
+      }
+
       showToast('🎉 Trip saved successfully to My Trips!');
-      sessionStorage.setItem('journeo_active_trip', JSON.stringify(res.trip));
     } catch (err: any) {
       alert(err.message || 'Failed to save trip');
     } finally {

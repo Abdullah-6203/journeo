@@ -12,15 +12,19 @@ import {
   Layers,
   Sliders,
   CheckCircle2,
-  Bookmark
+  Bookmark,
+  Globe
 } from 'lucide-react';
 import { api } from '../services/api';
 import { MapComponent } from '../components/MapComponent';
+import { InteractiveGlobe3D } from '../components/InteractiveGlobe3D';
+import { Button } from '../components/ui/Button';
 
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
   const [destinations, setDestinations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [heroView, setHeroView] = useState<'globe' | 'itinerary'>('globe');
 
   useEffect(() => {
     api.getDestinations().then(data => {
@@ -106,80 +110,128 @@ export const HomePage: React.FC = () => {
             </div>
           </div>
 
-          {/* Right Column: Floating Realistic Itinerary Preview Card */}
+          {/* Right Column: Interactive 3D India Globe & Itinerary Preview */}
           <div className="lg:col-span-5">
-            <div className="bg-ivory text-text rounded-3xl p-6 sm:p-7 shadow-2xl border border-white/60 backdrop-blur-lg transform hover:-translate-y-1 transition-all duration-300">
-              {/* Card Header */}
-              <div className="flex items-start justify-between gap-4 pb-4 border-b border-border">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-terracotta bg-terracotta/10 px-2 py-0.5 rounded-md">
-                    Recommended Circuit
-                  </span>
-                  <h3 className="font-serif text-xl font-bold text-text mt-1.5">
-                    Imperial Delhi Heritage
-                  </h3>
-                  <p className="text-xs text-text-muted flex items-center gap-1 mt-0.5">
-                    <MapPin className="w-3.5 h-3.5 text-sage" />
-                    <span>Delhi • 1 Day • 4 Verified Monuments</span>
-                  </p>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-text-subtle block font-medium">Optimization</span>
-                  <span className="font-serif font-bold text-lg text-deep-green">96%</span>
-                </div>
-              </div>
-
-              {/* Preference Tags */}
-              <div className="flex items-center gap-1.5 py-3 flex-wrap">
-                <span className="text-[10px] font-semibold bg-ivory-dark text-text-muted px-2.5 py-1 rounded-full border border-border">
-                  🏛️ Ancient Architecture
-                </span>
-                <span className="text-[10px] font-semibold bg-ivory-dark text-text-muted px-2.5 py-1 rounded-full border border-border">
-                  📜 UNESCO Sites
-                </span>
-                <span className="text-[10px] font-semibold bg-ivory-dark text-text-muted px-2.5 py-1 rounded-full border border-border">
-                  ⚖️ Balanced Pace
-                </span>
-              </div>
-
-              {/* Itinerary Stops Preview */}
-              <div className="space-y-3 py-2">
-                {sampleStops.map((stop, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-border-subtle shadow-soft-sm text-xs"
+            <div className="bg-ivory/95 text-text rounded-3xl p-5 sm:p-7 shadow-2xl border border-white/60 backdrop-blur-xl transform hover:-translate-y-1 transition-all duration-300">
+              {/* Header with 3D Globe / Circuit Switcher */}
+              <div className="flex items-center justify-between pb-4 border-b border-border">
+                <div className="flex items-center gap-1.5 bg-ivory-dark/60 p-1 rounded-xl border border-border">
+                  <button
+                    type="button"
+                    onClick={() => setHeroView('globe')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      heroView === 'globe'
+                        ? 'bg-deep-green text-white shadow-soft-sm'
+                        : 'text-text-muted hover:text-text'
+                    }`}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-6 h-6 rounded-full bg-deep-green text-white flex items-center justify-center font-bold text-[11px] flex-shrink-0">
-                        {idx + 1}
-                      </div>
-                      <div>
-                        <div className="font-semibold text-text">{stop.title}</div>
-                        <div className="text-[11px] text-text-subtle">{stop.tag}</div>
-                      </div>
+                    <Globe className="w-3.5 h-3.5" />
+                    <span>3D India Globe</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHeroView('itinerary')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      heroView === 'itinerary'
+                        ? 'bg-deep-green text-white shadow-soft-sm'
+                        : 'text-text-muted hover:text-text'
+                    }`}
+                  >
+                    <Compass className="w-3.5 h-3.5" />
+                    <span>Circuit Preview</span>
+                  </button>
+                </div>
+
+                <span className="text-[10px] font-bold uppercase tracking-wider text-terracotta bg-terracotta/10 px-2.5 py-1 rounded-full">
+                  {heroView === 'globe' ? 'Interactive 3D' : 'Smart Plan'}
+                </span>
+              </div>
+
+              {heroView === 'globe' ? (
+                <div className="py-2 space-y-4">
+                  <InteractiveGlobe3D />
+                  <div className="flex items-center justify-between pt-3 border-t border-border text-xs">
+                    <span className="text-text-muted">Explore India hubs in 3D</span>
+                    <Link
+                      to="/plan"
+                      className="px-4 py-2 bg-deep-green hover:bg-deep-green-dark text-white text-xs font-semibold rounded-xl transition-all shadow-soft-sm flex items-center gap-1.5"
+                    >
+                      <span>Plan This Route</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                <div className="pt-3">
+                  <div className="flex items-start justify-between gap-4 pb-2">
+                    <div>
+                      <h3 className="font-serif text-xl font-bold text-text">
+                        Imperial Delhi Heritage
+                      </h3>
+                      <p className="text-xs text-text-muted flex items-center gap-1 mt-0.5">
+                        <MapPin className="w-3.5 h-3.5 text-sage" />
+                        <span>Delhi • 1 Day • 4 Verified Monuments</span>
+                      </p>
                     </div>
                     <div className="text-right">
-                      <div className="font-mono text-[11px] text-deep-green font-semibold">{stop.time}</div>
-                      <div className="text-[10px] text-text-subtle">{stop.duration} stay</div>
+                      <span className="text-[10px] text-text-subtle block font-medium">Optimization</span>
+                      <span className="font-serif font-bold text-lg text-deep-green">96%</span>
                     </div>
                   </div>
-                ))}
-              </div>
 
-              {/* Action */}
-              <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
-                <span className="text-xs text-text-muted flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5 text-terracotta" />
-                  <span>Total duration: 7h 15m</span>
-                </span>
-                <Link
-                  to="/plan"
-                  className="px-4 py-2 bg-sage hover:bg-sage-dark text-white text-xs font-semibold rounded-lg transition-colors shadow-soft-sm flex items-center gap-1"
-                >
-                  <span>Customize Trip</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </Link>
-              </div>
+                  {/* Preference Tags */}
+                  <div className="flex items-center gap-1.5 py-2.5 flex-wrap">
+                    <span className="text-[10px] font-semibold bg-ivory-dark text-text-muted px-2.5 py-1 rounded-full border border-border">
+                      🏛️ Ancient Architecture
+                    </span>
+                    <span className="text-[10px] font-semibold bg-ivory-dark text-text-muted px-2.5 py-1 rounded-full border border-border">
+                      📜 UNESCO Sites
+                    </span>
+                    <span className="text-[10px] font-semibold bg-ivory-dark text-text-muted px-2.5 py-1 rounded-full border border-border">
+                      ⚖️ Balanced Pace
+                    </span>
+                  </div>
+
+                  {/* Itinerary Stops Preview */}
+                  <div className="space-y-2.5 py-2">
+                    {sampleStops.map((stop, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-border-subtle shadow-soft-sm text-xs"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-6 h-6 rounded-full bg-deep-green text-white flex items-center justify-center font-bold text-[11px] flex-shrink-0">
+                            {idx + 1}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-text">{stop.title}</div>
+                            <div className="text-[11px] text-text-subtle">{stop.tag}</div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-mono text-[11px] text-deep-green font-semibold">{stop.time}</div>
+                          <div className="text-[10px] text-text-subtle">{stop.duration} stay</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Action */}
+                  <div className="mt-3 pt-3 border-t border-border flex items-center justify-between">
+                    <span className="text-xs text-text-muted flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-terracotta" />
+                      <span>Total duration: 7h 15m</span>
+                    </span>
+                    <Link
+                      to="/plan"
+                      className="px-4 py-2 bg-sage hover:bg-sage-dark text-white text-xs font-semibold rounded-xl transition-colors shadow-soft-sm flex items-center gap-1"
+                    >
+                      <span>Customize Trip</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

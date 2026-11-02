@@ -25,30 +25,62 @@ export const MyTripsPage: React.FC = () => {
   const fetchTrips = async () => {
     setLoading(true);
     try {
+      let remoteUpcoming: any[] = [];
+      let remoteOngoing: any[] = [];
+      let remoteCompleted: any[] = [];
+
       if (user) {
-        const res = await api.getTrips();
-        setTripsData(res.categorized || { upcoming: [], ongoing: [], completed: [] });
-      } else {
-        // Fallback demo trip from seed or session
-        const cached = sessionStorage.getItem('journeo_generated_plan');
-        const demoTrip = cached ? JSON.parse(cached) : null;
-        if (demoTrip) {
-          setTripsData({
-            upcoming: [{
-              id: 'demo_trip_1',
-              title: demoTrip.title || 'Delhi Royal Heritage Circuit',
-              destinationCity: demoTrip.destinationCity || 'Delhi',
-              startDate: demoTrip.tripConfig?.startDate || '2026-11-10',
-              status: 'UPCOMING',
-              stops: demoTrip.plan?.scheduledStops || demoTrip.stops || [],
-              optimizationScore: demoTrip.plan?.optimizationScore || 96,
-              totalDistanceKm: demoTrip.plan?.totalDistanceKm || 20.9
-            }],
-            ongoing: [],
-            completed: []
-          });
+        try {
+          const res = await api.getTrips();
+          if (res?.categorized) {
+            remoteUpcoming = res.categorized.upcoming || [];
+            remoteOngoing = res.categorized.ongoing || [];
+            remoteCompleted = res.categorized.completed || [];
+          }
+        } catch (apiErr) {
+          console.warn('Backend trips fetch skipped:', apiErr);
         }
       }
+
+      // Read local saved trips
+      const localSaved = JSON.parse(localStorage.getItem('journeo_saved_trips') || '[]');
+      const localUpcoming = localSaved.filter((t: any) => !t.status || t.status === 'UPCOMING' || t.status === 'planned');
+      const localOngoing = localSaved.filter((t: any) => t.status === 'ONGOING' || t.status === 'in_progress');
+      const localCompleted = localSaved.filter((t: any) => t.status === 'COMPLETED' || t.status === 'completed');
+
+      // If nothing saved anywhere, provide initial sample circuit so the dashboard is never an empty void
+      if (remoteUpcoming.length === 0 && localUpcoming.length === 0 && remoteCompleted.length === 0 && localCompleted.length === 0) {
+        localUpcoming.push({
+          id: 'sample_circuit_1',
+          title: 'Jaipur Pink City Royal Circuit',
+          destinationCity: 'Jaipur',
+          startDate: '2026-11-15',
+          status: 'UPCOMING',
+          optimizationScore: 97,
+          totalDistanceKm: 14.2,
+          totalDurationMin: 420,
+          stops: [
+            { sequenceNumber: 1, plannedArrival: '09:00', plannedDeparture: '11:30', destination: { name: 'Amber Palace', imageUrl: 'https://images.unsplash.com/photo-1599661046289-e31897846e41?auto=format&fit=crop&w=400&q=80' } },
+            { sequenceNumber: 2, plannedArrival: '12:00', plannedDeparture: '13:30', destination: { name: 'Hawa Mahal', imageUrl: 'https://images.unsplash.com/photo-1609137144822-4467c6999244?auto=format&fit=crop&w=400&q=80' } },
+            { sequenceNumber: 3, plannedArrival: '14:00', plannedDeparture: '16:00', destination: { name: 'Bapu & Johari Bazaars', imageUrl: 'https://images.unsplash.com/photo-1582510003544-4d00b7f74220?auto=format&fit=crop&w=400&q=80' } }
+          ]
+        });
+      }
+
+      // Merge unique trips
+      const mergeUnique = (arrA: any[], arrB: any[]) => {
+        const map = new Map();
+        [...arrA, ...arrB].forEach(item => {
+          if (item && item.id) map.set(item.id, item);
+        });
+        return Array.from(map.values());
+      };
+
+      setTripsData({
+        upcoming: mergeUnique(remoteUpcoming, localUpcoming),
+        ongoing: mergeUnique(remoteOngoing, localOngoing),
+        completed: mergeUnique(remoteCompleted, localCompleted)
+      });
     } catch (err) {
       console.error('Error fetching trips:', err);
     } finally {

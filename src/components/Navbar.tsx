@@ -87,7 +87,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth }) => {
                 }`}
               >
                 <User className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{user.name.split(' ')[0]}</span>
+                <span className="hidden sm:inline">{(user.name || 'User').split(' ')[0]}</span>
               </Link>
               <button
                 onClick={logout}

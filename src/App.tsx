@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthContext';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
 import { AuthModal } from './components/AuthModal';
+import { RequireAuth } from './components/RequireAuth';
 
 import { HomePage } from './pages/HomePage';
 import { PlanTripPage } from './pages/PlanTripPage';
@@ -38,8 +39,22 @@ export const App: React.FC = () => {
               <Route path="/plan" element={<PlanTripPage />} />
               <Route path="/itinerary/preview" element={<ItineraryResultPage />} />
               <Route path="/journey" element={<JourneyModePage />} />
-              <Route path="/my-trips" element={<MyTripsPage />} />
-              <Route path="/profile" element={<ProfilePage />} />
+              <Route
+                path="/my-trips"
+                element={
+                  <RequireAuth>
+                    <MyTripsPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/profile"
+                element={
+                  <RequireAuth>
+                    <ProfilePage />
+                  </RequireAuth>
+                }
+              />
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

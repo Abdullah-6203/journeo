@@ -42,7 +42,7 @@ export const ExplorePage: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchInput, setSearchInput] = useState<string>('');
   const [debouncedQuery, setDebouncedQuery] = useState<string>('');
-  const [viewMode, setViewMode] = useState<'grid' | 'split_map'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'split_map'>('split_map');
   const [previewPlace, setPreviewPlace] = useState<IndiaDestination | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 

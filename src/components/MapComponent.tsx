@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { getActiveMapTileConfig } from '../services/mapProviderService';
@@ -44,9 +44,22 @@ export const MapComponent: React.FC<MapComponentProps> = ({
   const markerLayerRef = useRef<L.LayerGroup | null>(null);
   const polylineRef = useRef<L.Polyline | null>(null);
   const markerInstancesRef = useRef<Map<string, L.Marker>>(new Map());
+  const [activeProviderName, setActiveProviderName] = useState<string>(
+    getActiveMapTileConfig().displayName
+  );
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+    if (!containerRef.current) return;
+
+    // Reset container if previously initialized by hot reload or React StrictMode
+    if ((containerRef.current as any)._leaflet_id) {
+      delete (containerRef.current as any)._leaflet_id;
+    }
+
+    if (mapRef.current) {
+      mapRef.current.remove();
+      mapRef.current = null;
+    }
 
     // Determine initial center from markers if available
     const initialCenter: [number, number] =
@@ -71,38 +84,43 @@ export const MapComponent: React.FC<MapComponentProps> = ({
     );
     baseTileLayer.addTo(map);
 
-    // 2. Active custom provider overlay (if user configured Mappls, MapTiler, etc.)
+    // 2. Active custom provider pre-flight test (if user configured MapTiler, Google Maps, Mappls)
     const tileConfig = getActiveMapTileConfig();
     if (tileConfig.provider !== 'leaflet_carto') {
-      const customTileLayer = L.tileLayer(tileConfig.tileUrl, {
-        attribution: tileConfig.attribution,
-        maxZoom: tileConfig.maxZoom,
-        subdomains: tileConfig.subdomains || ['a', 'b', 'c', 'd']
-      });
+      const sampleTileUrl = tileConfig.tileUrl
+        .replace('{s}', tileConfig.subdomains ? tileConfig.subdomains[0] : 'a')
+        .replace('{z}', '1')
+        .replace('{x}', '1')
+        .replace('{y}', '0')
+        .replace('{r}', '');
 
-      let customFailed = false;
-      customTileLayer.on('tileerror', () => {
-        if (!customFailed) {
-          customFailed = true;
-          console.warn(`[Journeo Map] Custom tile provider '${tileConfig.provider}' encountered tile errors. Seamlessly falling back to CartoDB Voyager.`);
-          setTimeout(() => {
-            if (mapRef.current && mapRef.current.hasLayer(customTileLayer)) {
-              mapRef.current.removeLayer(customTileLayer);
-              mapRef.current.invalidateSize();
-            }
-          }, 0);
+      const tester = new Image();
+      tester.onload = () => {
+        if (mapRef.current) {
+          const customTileLayer = L.tileLayer(tileConfig.tileUrl, {
+            attribution: tileConfig.attribution,
+            maxZoom: tileConfig.maxZoom,
+            subdomains: tileConfig.subdomains || ['a', 'b', 'c', 'd']
+          });
+          customTileLayer.addTo(mapRef.current);
+          setActiveProviderName(tileConfig.displayName);
         }
-      });
-
-      customTileLayer.addTo(map);
+      };
+      tester.onerror = () => {
+        console.warn(
+          `[Journeo Map] API Key for ${tileConfig.displayName} returned an authentication/network error. Seamlessly continuing with CartoDB Voyager.`
+        );
+        setActiveProviderName('CartoDB Voyager (Fallback)');
+      };
+      tester.src = sampleTileUrl;
     }
 
     const layer = L.layerGroup().addTo(map);
     markerLayerRef.current = layer;
 
     // Resize listeners to guarantee no collapsed 0x0 container inside flex/grid layouts
-    const t1 = setTimeout(() => map.invalidateSize(), 150);
-    const t2 = setTimeout(() => map.invalidateSize(), 500);
+    const t1 = setTimeout(() => map.invalidateSize(), 100);
+    const t2 = setTimeout(() => map.invalidateSize(), 400);
 
     let resizeObserver: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
@@ -244,7 +262,7 @@ export const MapComponent: React.FC<MapComponentProps> = ({
       />
       <div className="absolute top-3 right-3 z-[1000] bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-lg border border-border text-[11px] font-semibold text-text flex items-center gap-1.5 shadow-soft-sm">
         <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
-        <span>Verified Coordinates • {getActiveMapTileConfig().displayName}</span>
+        <span>Verified Coordinates • {activeProviderName}</span>
       </div>
     </div>
   );

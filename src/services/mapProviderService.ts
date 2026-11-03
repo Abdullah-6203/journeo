@@ -106,7 +106,7 @@ export function isKnownInvalidKey(key: string | null | undefined): boolean {
     trimmed.includes('placeholder') ||
     trimmed.includes('your_') ||
     trimmed.includes('example') ||
-    trimmed === '6LoAXpovn9uPdJweJVOp'
+    trimmed === 'YOUR_API_KEY'
   ) {
     return true;
   }
@@ -173,15 +173,32 @@ export function getActiveMapTileConfig(
     getEnvVal('VITE_MAPTILER_API_KEY', envOverride) ||
     getEnvVal('MAPTILER_API_KEY', envOverride);
 
-  // MapTiler tiles — only activate if key is present and not dummy/placeholder
+  // MapTiler tiles — standard streets-v2 raster tiles
   if (maptilerKey && !isKnownInvalidKey(maptilerKey)) {
     return {
       provider: 'maptiler',
       displayName: 'MapTiler Streets',
       isConfigured: true,
-      tileUrl: `https://api.maptiler.com/maps/voyager/{z}/{x}/{y}.png?key=${maptilerKey}`,
+      tileUrl: `https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key=${maptilerKey}`,
       attribution: '&copy; <a href="https://www.maptiler.com/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19
+    };
+  }
+
+  const googleKey =
+    getEnvVal('VITE_GOOGLE_MAPS_API_KEY', envOverride) ||
+    getEnvVal('GOOGLE_MAPS_API_KEY', envOverride);
+
+  // Google Maps raster roadmap tiles
+  if (googleKey && !isKnownInvalidKey(googleKey) && googleKey.length > 10) {
+    return {
+      provider: 'google_maps',
+      displayName: 'Google Maps',
+      isConfigured: true,
+      tileUrl: `https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&key=${googleKey}`,
+      subdomains: ['0', '1', '2', '3'],
+      attribution: '&copy; Google Maps',
+      maxZoom: 20
     };
   }
 

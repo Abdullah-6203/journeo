@@ -64,8 +64,16 @@ export interface HardConstraintCheckResult {
   exclusionReason?: string;
 }
 
+export type ScorableCandidatePlace = IndiaDestination | (Partial<IndiaDestination> & {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  [key: string]: any;
+});
+
 export interface ScoredPlaceCandidate {
-  place: IndiaDestination;
+  place: ScorableCandidatePlace;
   score: number;
   metadata: PersonalisationDebugMetadata;
 }
@@ -213,7 +221,7 @@ export function calculateDistanceKm(
  * Uses normalized category & tag overlap, weighted by user interest priorities.
  */
 export function calculateInterestMatch(
-  place: IndiaDestination,
+  place: ScorableCandidatePlace,
   profile: UserPersonalisationProfile
 ): { score: number; matchedInterests: string[]; isMissing: boolean } {
   const userInterests = profile.selectedInterests || [];
@@ -234,7 +242,7 @@ export function calculateInterestMatch(
     Boolean(place.subcategory);
 
   const placeTags = new Set<string>([
-    normalizeTag(place.category),
+    normalizeTag(place.category || ''),
     ...(place.subcategory ? [normalizeTag(place.subcategory)] : []),
     ...(place.interestTags || []).map(t => normalizeTag(t)),
     ...((place.enrichment?.experienceTypes || []).map(t => normalizeTag(t)))
@@ -284,7 +292,7 @@ export function calculateInterestMatch(
  * Places exceeding target budget decline smoothly or steeply depending on strictness.
  */
 export function calculateBudgetSuitability(
-  place: IndiaDestination,
+  place: ScorableCandidatePlace,
   profile: UserPersonalisationProfile
 ): { score: number; estimatedCostINR: number; isMissing: boolean } {
   const entryFee = place.entryFeeINR ?? 0;
@@ -351,7 +359,7 @@ export function calculateBudgetSuitability(
  * tau depends on travel pace (relaxed: 6km, balanced: 12km, packed: 24km).
  */
 export function calculateDistanceSuitability(
-  place: IndiaDestination,
+  place: ScorableCandidatePlace,
   origin: { lat: number; lng: number },
   travelStyle: 'relaxed' | 'balanced' | 'packed' = 'balanced'
 ): { score: number; distanceKm: number } {
@@ -379,7 +387,7 @@ export function calculateDistanceSuitability(
  * Matches preferred experience against structured place attributes.
  */
 export function calculateExperienceMatch(
-  place: IndiaDestination,
+  place: ScorableCandidatePlace,
   profile: UserPersonalisationProfile
 ): { score: number; matchedAttributes: string[]; isMissing: boolean } {
   const preferred = (profile.preferredExperience || '').toLowerCase().trim();
@@ -388,15 +396,15 @@ export function calculateExperienceMatch(
   if (!preferred) {
     // Default to travelStyle-based experience
     const paceScore = travelStyle === 'relaxed'
-      ? (place.averageVisitDuration >= 60 ? 0.9 : 0.7)
+      ? ((place.averageVisitDuration ?? 60) >= 60 ? 0.9 : 0.7)
       : (travelStyle === 'packed' ? 0.85 : 0.8);
     return { score: paceScore, matchedAttributes: ['pace_matched'], isMissing: false };
   }
 
   const expTypes = (place.enrichment?.experienceTypes || []).map(e => e.toLowerCase());
-  const categoryLower = place.category.toLowerCase();
+  const categoryLower = (place.category || '').toLowerCase();
   const subcatLower = (place.subcategory || '').toLowerCase();
-  const text = `${place.name} ${place.description} ${place.highlights.join(' ')}`.toLowerCase();
+  const text = `${place.name} ${place.description || ''} ${(place.highlights || []).join(' ')}`.toLowerCase();
 
   let score = 0.5;
   const matches: string[] = [];
@@ -456,7 +464,7 @@ export function calculateExperienceMatch(
 
     case 'relaxed':
       // Relaxed travel favors unhurried, comfortable dwell times and serene crowd levels
-      if (place.averageVisitDuration >= 75 || place.enrichment?.crowdLevel === 'low_offbeat') {
+      if ((place.averageVisitDuration ?? 60) >= 75 || place.enrichment?.crowdLevel === 'low_offbeat') {
         score = 0.92;
         matches.push('unhurried_pace');
       } else {
@@ -559,7 +567,7 @@ export function calculateDynamicWeights(
  * excluded categories, and previously visited places.
  */
 export function evaluateHardConstraints(
-  place: IndiaDestination,
+  place: ScorableCandidatePlace,
   profile: UserPersonalisationProfile,
   visitedOrScheduledIds: Set<string> = new Set()
 ): HardConstraintCheckResult {
@@ -593,7 +601,7 @@ export function evaluateHardConstraints(
 
   // 4. Explicitly excluded categories
   if (profile.excludedCategories && profile.excludedCategories.length > 0) {
-    const placeCat = place.category.toLowerCase();
+    const placeCat = (place.category || '').toLowerCase();
     const placeSub = (place.subcategory || '').toLowerCase();
     const isExcluded = profile.excludedCategories.some(
       c => c.toLowerCase() === placeCat || c.toLowerCase() === placeSub
@@ -634,7 +642,7 @@ export function evaluateHardConstraints(
  * Score(p, u) = ((w_i * I + w_b * B + w_d * D + w_c * C) / sum(w)) * 100
  */
 export function scoreCandidatePlace(
-  place: IndiaDestination,
+  place: ScorableCandidatePlace,
   profile: UserPersonalisationProfile,
   origin: { lat: number; lng: number } = profile.startingLocation || { lat: place.latitude, lng: place.longitude }
 ): ScoredPlaceCandidate {

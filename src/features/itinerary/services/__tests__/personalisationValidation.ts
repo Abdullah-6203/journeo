@@ -4,7 +4,8 @@ import {
   calculateDynamicWeights,
   rankCandidatePlaces,
   UserPersonalisationProfile,
-  calculateDistanceKm
+  calculateDistanceKm,
+  ScorableCandidatePlace
 } from '../../../../services/personalisationEngine';
 import { INDIA_DESTINATIONS, IndiaDestination } from '../../../../data/indiaDestinations';
 import {
@@ -163,7 +164,7 @@ async function runPersonalisationValidationSuite() {
   // --------------------------------------------------------------------------
   // TEST 5: Missing Data Does Not Automatically Produce a Zero Score
   // --------------------------------------------------------------------------
-  const sparsePlace: IndiaDestination = {
+  const sparsePlace: ScorableCandidatePlace = {
     id: 'delhi_sparse_test',
     providerPlaceId: 'sparse_001',
     name: 'Mystery Community Pavilion',

@@ -21,7 +21,13 @@ export const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children 
   }
 
   if (!user || status === 'unauthenticated') {
-    return <Navigate to="/" replace state={{ from: location, openAuth: true }} />;
+    return (
+      <Navigate
+        to={`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`}
+        replace
+        state={{ from: location }}
+      />
+    );
   }
 
   return <>{children}</>;

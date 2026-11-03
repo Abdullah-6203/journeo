@@ -20,6 +20,10 @@ interface AuthContextType {
   register: (name: string, email: string, password: string) => Promise<{ requiresEmailConfirmation?: boolean }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  isAuthModalOpen: boolean;
+  authModalMode: 'login' | 'register';
+  openAuthModal: (mode?: 'login' | 'register') => void;
+  closeAuthModal: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({} as any);
@@ -51,6 +55,8 @@ function mapSupabaseUser(su: SupabaseUser | null): User | null {
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('register');
 
   // Initialize auth state
   useEffect(() => {
@@ -227,10 +233,33 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const openAuthModal = (mode: 'login' | 'register' = 'register') => {
+    setAuthModalMode(mode);
+    setIsAuthModalOpen(true);
+  };
+
+  const closeAuthModal = () => {
+    setIsAuthModalOpen(false);
+  };
+
   const status: AuthStatus = loading ? 'loading' : user ? 'authenticated' : 'unauthenticated';
 
   return (
-    <AuthContext.Provider value={{ user, loading, status, login, register, logout, refreshUser }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        status,
+        login,
+        register,
+        logout,
+        refreshUser,
+        isAuthModalOpen,
+        authModalMode,
+        openAuthModal,
+        closeAuthModal
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

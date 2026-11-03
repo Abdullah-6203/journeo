@@ -150,13 +150,13 @@ export const MapComponent: React.FC<MapComponentProps> = ({
 
       leafletMarker.bindPopup(`
         <div style="font-family: 'Inter', -apple-system, sans-serif; width: 230px; padding: 4px;">
-          ${m.isMealStop ? `<div style="font-size: 10px; font-weight: 700; color: #D97706; text-transform: uppercase;">🍽️ Food Break • ${m.cuisineType || 'Local Gastronomy'}</div>` : m.order ? `<div style="font-size: 10px; font-weight: 700; color: #87977B; text-transform: uppercase;">Stop ${m.order} ${m.isMustVisit ? '• Must Visit' : ''}</div>` : ''}
-          <div style="font-family: 'Playfair Display', Georgia, serif; font-weight: 700; font-size: 14px; color: #302F29; margin-top: 3px; line-height: 1.2;">
+          ${m.isMealStop ? `<div style="font-size: 10px; font-weight: 700; color: #D97706; text-transform: uppercase;">🍽️ Food Break • ${m.cuisineType || 'Local Gastronomy'}</div>` : m.order ? `<div style="font-size: 10px; font-weight: 700; color: #49634F; text-transform: uppercase;">Stop ${m.order} ${m.isMustVisit ? '• Must Visit' : ''}</div>` : ''}
+          <div style="font-family: 'Playfair Display', Georgia, serif; font-weight: 700; font-size: 14px; color: #344B3C; margin-top: 3px; line-height: 1.2;">
             ${m.title}
           </div>
-          ${m.timing ? `<div style="font-size: 11px; color: #636158; margin-top: 3px; font-weight: 600;">⏰ ${m.timing}</div>` : ''}
+          ${m.timing ? `<div style="font-size: 11px; color: #667363; margin-top: 3px; font-weight: 600;">⏰ ${m.timing}</div>` : ''}
           ${m.imageUrl ? `<img src="${m.imageUrl}" style="width: 100%; height: 90px; object-fit: cover; border-radius: 8px; margin-top: 6px; border: 1px solid #E8E5DA;" />` : ''}
-          ${m.description ? `<p style="font-size: 11px; color: #636158; margin: 6px 0 0; line-height: 1.35;">${m.description.slice(0, 110)}...</p>` : ''}
+          ${m.description ? `<p style="font-size: 11px; color: #667363; margin: 6px 0 0; line-height: 1.35;">${m.description.slice(0, 110)}...</p>` : ''}
         </div>
       `);
 

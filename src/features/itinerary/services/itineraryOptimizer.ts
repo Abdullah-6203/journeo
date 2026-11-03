@@ -78,6 +78,7 @@ export interface ItineraryStopOutput {
   recommendedTransitMode?: 'walking' | 'cab' | 'public' | 'bicycle';
   transitInstruction: string;
   isMustVisit: boolean;
+  isCustomStop?: boolean;
   visitStatus: 'PENDING' | 'VISITED' | 'SKIPPED';
   actualVisitTime?: string;
   visitedAtISO?: string;
@@ -123,6 +124,7 @@ export interface OptimizationMetrics {
 
 export interface ItineraryValidationResult {
   valid: boolean;
+  isValid?: boolean;
   errors: string[];
   warnings: string[];
 }
@@ -1644,6 +1646,7 @@ export function validateGeneratedItinerary(
 
   return {
     valid: errors.length === 0,
+    isValid: errors.length === 0,
     errors,
     warnings
   };

@@ -311,14 +311,16 @@ const repeat1 = generateOptimizedItinerary({
   days: 3,
   selectedInterests: ['Nature and Landscapes', 'Food and Local Culture'],
   crowdPreference: 'avoid_crowded',
-  walkingTolerance: 'moderate'
+  walkingTolerance: 'moderate',
+  seedVariation: 0
 });
 const repeat2 = generateOptimizedItinerary({
   destination: 'Goa',
   days: 3,
   selectedInterests: ['Nature and Landscapes', 'Food and Local Culture'],
   crowdPreference: 'avoid_crowded',
-  walkingTolerance: 'moderate'
+  walkingTolerance: 'moderate',
+  seedVariation: 0
 });
 
 const consistentValid =

@@ -19,16 +19,29 @@ import {
   Eye,
   Users,
   Wallet,
-  Edit3
+  Edit3,
+  Plus,
+  ArrowUp,
+  ArrowDown,
+  Pin
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useTripContext } from '../context/TripContext';
 import { MapComponent } from '../components/MapComponent';
 import { PlacePreviewModal } from '../components/PlacePreviewModal';
+import { AddStopModal } from '../components/AddStopModal';
 import { TripExpenseTrackerPanel } from '../components/TripExpenseTrackerPanel';
 import { TripAssistantDrawer } from '../components/TripAssistantDrawer';
 import { generateOptimizedItinerary, OptimizedItineraryResponse } from '../features/itinerary/services/itineraryOptimizer';
+import {
+  addStopToItinerary,
+  removeStopFromItinerary,
+  reorderStopInDay,
+  moveStopToDay,
+  updateStopDetails,
+  AddStopRequest
+} from '../services/customPlaceService';
 import { resolveCanonicalDestination } from '../data/canonicalDestinations';
 import { INDIA_DESTINATIONS, IndiaDestination } from '../data/indiaDestinations';
 import { getPlaceReviewData } from '../data/placeReviews';
@@ -130,6 +143,8 @@ export const ItineraryResultPage: React.FC = () => {
   const [activeDayTab, setActiveDayTab] = useState<number | 'ALL'>('ALL');
   const [previewPlace, setPreviewPlace] = useState<IndiaDestination | null>(null);
   const [showStartReviewModal, setShowStartReviewModal] = useState<boolean>(false);
+  const [isAddStopModalOpen, setIsAddStopModalOpen] = useState<boolean>(false);
+  const [addStopInitialDay, setAddStopInitialDay] = useState<number>(1);
 
   // Replan modal
   const [replanOpen, setReplanOpen] = useState(false);
@@ -209,13 +224,49 @@ export const ItineraryResultPage: React.FC = () => {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  const handleRemoveStop = (idx: number) => {
+  const syncItineraryUpdate = (updated: any, toastMsg?: string) => {
+    setItineraryData(updated);
+    setStops(updated.stops || []);
+    sessionStorage.setItem('journeo_generated_plan', JSON.stringify(updated));
+    if (activeTrip) {
+      setActiveTrip({
+        ...activeTrip,
+        itinerary: updated,
+        stops: updated.stops || []
+      });
+    }
+    if (toastMsg) showToast(toastMsg);
+  };
+
+  const handleAddStop = (req: AddStopRequest) => {
+    if (!itineraryData) return;
+    try {
+      const updated = addStopToItinerary(itineraryData, req);
+      syncItineraryUpdate(updated, `Added "${req.destination.name}" to Day ${req.dayNumber}!`);
+      setIsAddStopModalOpen(false);
+    } catch (err: any) {
+      console.error('Error adding stop:', err);
+      showToast('Failed to add stop: ' + (err.message || 'Unknown error'));
+    }
+  };
+
+  const handleRemoveStopById = (stopId: string) => {
     if (stops.length <= 2) {
       alert('An itinerary requires at least 2 stops for a complete route.');
       return;
     }
+    if (itineraryData?.days?.length) {
+      try {
+        const updated = removeStopFromItinerary(itineraryData, stopId);
+        syncItineraryUpdate(updated, 'Stop removed. Schedule and transit recalculated.');
+        return;
+      } catch (err: any) {
+        console.error('Error in removeStopFromItinerary:', err);
+      }
+    }
+    // Fallback if itineraryData is a simple flat object
     const updated = stops
-      .filter((_, i) => i !== idx)
+      .filter(s => s.id !== stopId && s.placeId !== stopId)
       .map((s, newIdx) => ({
         ...s,
         sequenceNumber: newIdx + 1
@@ -224,11 +275,58 @@ export const ItineraryResultPage: React.FC = () => {
     showToast('Stop removed. Route and schedule adjusted.');
   };
 
+  const handleReorderStop = (stopId: string, dayNumber: number, direction: 'up' | 'down') => {
+    if (!itineraryData?.days?.length) return;
+    try {
+      const updated = reorderStopInDay(itineraryData, dayNumber, stopId, direction);
+      syncItineraryUpdate(updated, `Stop moved ${direction}. Timings updated.`);
+    } catch (err: any) {
+      console.error('Error reordering stop:', err);
+    }
+  };
+
+  const handleMoveStopToDay = (stopId: string, targetDayNumber: number) => {
+    if (!itineraryData?.days?.length) return;
+    try {
+      const updated = moveStopToDay(itineraryData, stopId, targetDayNumber);
+      syncItineraryUpdate(updated, `Stop moved to Day ${targetDayNumber}.`);
+    } catch (err: any) {
+      console.error('Error moving stop to day:', err);
+    }
+  };
+
+  const handleToggleMustVisit = (stopId: string, currentVal: boolean) => {
+    if (!itineraryData?.days?.length) return;
+    try {
+      const updated = updateStopDetails(itineraryData, stopId, { isMustVisit: !currentVal });
+      syncItineraryUpdate(
+        updated,
+        !currentVal ? 'Pinned as Must-Visit landmark.' : 'Unpinned from Must-Visit.'
+      );
+    } catch (err: any) {
+      console.error('Error updating must visit status:', err);
+    }
+  };
+
   const handleEditDuration = (idx: number, delta: number) => {
+    const target = stops[idx];
+    if (!target) return;
+    const stopId = target.id || target.placeId;
+    const currentDur = target.visitDuration || target.visitDurationMinutes || 60;
+    const newDur = Math.max(20, Math.min(240, currentDur + delta));
+
+    if (itineraryData?.days?.length && stopId) {
+      try {
+        const updated = updateStopDetails(itineraryData, stopId, { visitDurationMinutes: newDur });
+        syncItineraryUpdate(updated, `Dwell time updated to ${newDur} mins.`);
+        return;
+      } catch (err) {
+        console.error('Error in updateStopDetails duration:', err);
+      }
+    }
+
     const updated = [...stops];
-    const target = updated[idx];
-    const newDur = Math.max(30, Math.min(240, (target.visitDuration || 60) + delta));
-    target.visitDuration = newDur;
+    updated[idx] = { ...target, visitDuration: newDur, visitDurationMinutes: newDur };
     setStops(updated);
     showToast(`Dwell time updated to ${newDur} mins.`);
   };
@@ -715,15 +813,29 @@ export const ItineraryResultPage: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* LEFT SIDE: ITINERARY TIMELINE */}
         <div className="lg:col-span-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="font-serif text-lg font-bold text-text">
-              {activeDayTab === 'ALL'
-                ? `Complete ${tripDaysCount}-Day Timeline (${displayedStops.length} Stops)`
-                : `Day ${activeDayTab} Schedule • ${activeDayObj?.date || ''}`}
-            </h2>
-            <span className="text-xs text-text-muted">
-              Click any place for reviews & details
-            </span>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h2 className="font-serif text-lg font-bold text-text">
+                {activeDayTab === 'ALL'
+                  ? `Complete ${tripDaysCount}-Day Timeline (${displayedStops.length} Stops)`
+                  : `Day ${activeDayTab} Schedule • ${activeDayObj?.date || ''}`}
+              </h2>
+              <span className="text-xs text-text-muted">
+                Customise schedule, reorder, or add personal stops
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setAddStopInitialDay(activeDayTab === 'ALL' ? 1 : Number(activeDayTab));
+                setIsAddStopModalOpen(true);
+              }}
+              className="px-3.5 py-2 rounded-xl bg-deep-green hover:bg-deep-green-dark text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Stop</span>
+            </button>
           </div>
 
           <div className="relative pl-6 space-y-5 before:absolute before:left-2.5 before:top-4 before:bottom-4 before:w-0.5 before:bg-sage/40">
@@ -731,6 +843,13 @@ export const ItineraryResultPage: React.FC = () => {
               const dest = stop.destination || {};
               const isSelected = selectedStopId === (stop.id || dest.id);
               const rev = getPlaceReviewData(dest.id || stop.placeId || dest.name);
+              const currentDayNum = stop.dayNumber || (activeDayTab === 'ALL' ? 1 : Number(activeDayTab));
+              const isCustom = stop.isCustomStop || dest.isCustomStop || dest.providerPlaceId?.startsWith('user_created_');
+
+              // Find order within this specific day for Up/Down buttons
+              const dayStops = itineraryData?.days?.find((d: any) => d.dayNumber === currentDayNum)?.stops || displayedStops;
+              const idxInDay = dayStops.findIndex((s: any) => s.id === stop.id || s.placeId === stop.placeId);
+              const totalInDay = dayStops.length;
 
               return (
                 <div key={stop.id || idx} className="relative group">
@@ -764,6 +883,11 @@ export const ItineraryResultPage: React.FC = () => {
                           {stop.isMustVisit && (
                             <span className="text-[10px] font-bold text-terracotta-dark bg-terracotta/15 px-2 py-0.5 rounded flex items-center gap-1">
                               <Star className="w-3 h-3 fill-current" /> Must Visit
+                            </span>
+                          )}
+                          {isCustom && (
+                            <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded flex items-center gap-1">
+                              <Sparkles className="w-2.5 h-2.5" /> Custom Stop
                             </span>
                           )}
                           <span className="text-[10px] text-text-subtle font-mono">
@@ -822,13 +946,14 @@ export const ItineraryResultPage: React.FC = () => {
                     </div>
 
                     <div className="mt-4 pt-3 border-t border-border/70 flex items-center justify-between text-xs flex-wrap gap-2">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-text flex items-center gap-1">
                           <Clock className="w-3.5 h-3.5 text-deep-green" />
                           {stop.plannedArrival} - {stop.plannedDeparture}
                         </span>
                         <div className="flex items-center gap-1 bg-ivory border border-border px-2 py-0.5 rounded-lg text-[11px]">
                           <button
+                            type="button"
                             onClick={e => {
                               e.stopPropagation();
                               handleEditDuration(idx, -15);
@@ -837,8 +962,9 @@ export const ItineraryResultPage: React.FC = () => {
                           >
                             -
                           </button>
-                          <span>{stop.visitDuration}m stay</span>
+                          <span>{stop.visitDuration || stop.visitDurationMinutes || 60}m stay</span>
                           <button
+                            type="button"
                             onClick={e => {
                               e.stopPropagation();
                               handleEditDuration(idx, 15);
@@ -848,9 +974,71 @@ export const ItineraryResultPage: React.FC = () => {
                             +
                           </button>
                         </div>
+
+                        {/* Stop Reordering within Day */}
+                        <div className="flex items-center gap-0.5 bg-ivory border border-border rounded-lg p-0.5" onClick={e => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            disabled={idxInDay <= 0}
+                            onClick={() => handleReorderStop(stop.id, currentDayNum, 'up')}
+                            className={`p-1 rounded hover:bg-sage/20 transition-colors ${
+                              idxInDay <= 0 ? 'opacity-30 cursor-not-allowed text-text-subtle' : 'text-text hover:text-deep-green'
+                            }`}
+                            title="Move earlier in day"
+                          >
+                            <ArrowUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={idxInDay >= totalInDay - 1}
+                            onClick={() => handleReorderStop(stop.id, currentDayNum, 'down')}
+                            className={`p-1 rounded hover:bg-sage/20 transition-colors ${
+                              idxInDay >= totalInDay - 1 ? 'opacity-30 cursor-not-allowed text-text-subtle' : 'text-text hover:text-deep-green'
+                            }`}
+                            title="Move later in day"
+                          >
+                            <ArrowDown className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* Move to another day if multi-day */}
+                        {tripDaysCount > 1 && (
+                          <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                            <span className="text-[10px] text-text-subtle font-medium">Day:</span>
+                            <select
+                              value={currentDayNum}
+                              onChange={e => handleMoveStopToDay(stop.id, Number(e.target.value))}
+                              className="text-[11px] bg-ivory border border-border rounded-lg px-2 py-0.5 text-text font-medium"
+                            >
+                              {Array.from({ length: tripDaysCount }).map((_, i) => (
+                                <option key={i + 1} value={i + 1}>
+                                  Day {i + 1}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-2">
+                        {/* Must-Visit Pin Toggle */}
+                        <button
+                          type="button"
+                          onClick={e => {
+                            e.stopPropagation();
+                            handleToggleMustVisit(stop.id, Boolean(stop.isMustVisit));
+                          }}
+                          className={`text-[11px] font-bold flex items-center gap-1 px-2 py-1 rounded-lg border transition-all ${
+                            stop.isMustVisit
+                              ? 'bg-terracotta/15 border-terracotta/30 text-terracotta-dark'
+                              : 'bg-ivory border-border text-text-muted hover:text-text'
+                          }`}
+                          title={stop.isMustVisit ? 'Pinned as must visit' : 'Pin as must visit'}
+                        >
+                          <Star className={`w-3 h-3 ${stop.isMustVisit ? 'fill-current' : ''}`} />
+                          <span>{stop.isMustVisit ? 'Pinned' : 'Pin'}</span>
+                        </button>
+
                         <button
                           type="button"
                           onClick={e => {
@@ -861,10 +1049,12 @@ export const ItineraryResultPage: React.FC = () => {
                         >
                           <Eye className="w-3 h-3" /> Reviews & Info
                         </button>
+
                         <button
+                          type="button"
                           onClick={e => {
                             e.stopPropagation();
-                            handleRemoveStop(idx);
+                            handleRemoveStopById(stop.id || stop.placeId);
                           }}
                           className="text-text-subtle hover:text-terracotta p-1 transition-colors"
                           title="Remove stop"
@@ -1175,6 +1365,27 @@ export const ItineraryResultPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Add Stop Modal (Catalog Search & Custom Place Creation) */}
+      <AddStopModal
+        isOpen={isAddStopModalOpen}
+        onClose={() => setIsAddStopModalOpen(false)}
+        destinationId={
+          itineraryData?.canonicalDestination?.destinationId ||
+          itineraryData?.tripConfig?.destinationId ||
+          itineraryData?.destinationCity?.toLowerCase() ||
+          'delhi'
+        }
+        cityName={
+          itineraryData?.destinationCity ||
+          itineraryData?.canonicalDestination?.destinationName ||
+          'India'
+        }
+        totalDays={tripDaysCount}
+        initialDay={addStopInitialDay}
+        existingPlaceIds={stops.map((s: any) => s.placeId || s.destination?.id || s.id)}
+        onAddStop={handleAddStop}
+      />
 
       {/* Place Preview Modal */}
       <PlacePreviewModal

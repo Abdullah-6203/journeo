@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
+import { getActiveMapTileConfig } from '../services/mapProviderService';
 
 export interface MapMarker {
   id: string;
@@ -7,6 +8,7 @@ export interface MapMarker {
   lng: number;
   title: string;
   order?: number;
+  dayNumber?: number;
   isMustVisit?: boolean;
   status?: string; // PENDING, VISITED, SKIPPED
   imageUrl?: string;
@@ -57,26 +59,13 @@ export const MapComponent: React.FC<MapComponentProps> = ({
     });
     mapRef.current = map;
 
-    // Detect MapTiler API Key from environment
-    const maptilerKey =
-      (typeof import.meta !== 'undefined' && import.meta.env &&
-        (import.meta.env.VITE_MAPTILER_API_KEY || import.meta.env.VITE_GOOGLE_MAPS_API_KEY)) || '';
-
-    if (maptilerKey && maptilerKey.length > 6) {
-      // MapTiler High-Resolution Streets Tile Layer
-      L.tileLayer(`https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=${maptilerKey}`, {
-        attribution:
-          '&copy; <a href="https://www.maptiler.com/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-        maxZoom: 19,
-        crossOrigin: true
-      }).addTo(map);
-    } else {
-      // CartoDB Voyager clean editorial fallback
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; <a href="https://carto.com/">CartoDB</a> contributors',
-        maxZoom: 19
-      }).addTo(map);
-    }
+    // Active Map Tile Provider (Mappls or CartoDB Voyager / OpenStreetMap)
+    const tileConfig = getActiveMapTileConfig();
+    L.tileLayer(tileConfig.tileUrl, {
+      attribution: tileConfig.attribution,
+      maxZoom: tileConfig.maxZoom,
+      subdomains: tileConfig.subdomains || ['a', 'b', 'c', 'd']
+    }).addTo(map);
 
     const layer = L.layerGroup().addTo(map);
     markerLayerRef.current = layer;
@@ -199,7 +188,7 @@ export const MapComponent: React.FC<MapComponentProps> = ({
       <div ref={containerRef} className="w-full h-full" />
       <div className="absolute top-3 right-3 z-[1000] bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-lg border border-border text-[11px] font-semibold text-text flex items-center gap-1.5 shadow-soft-sm">
         <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
-        <span>MapTiler Engine • Verified Coordinates</span>
+        <span>Verified Coordinates • {getActiveMapTileConfig().provider === 'mappls' ? 'Mappls Enterprise' : 'CartoDB & OpenStreetMap'}</span>
       </div>
     </div>
   );

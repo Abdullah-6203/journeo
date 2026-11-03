@@ -36,62 +36,8 @@ export const routingService = {
       return routeCache.get(cacheKey)!;
     }
 
-    // Calculate Haversine base distance
+    // Calculate Haversine base distance & realistic Indian road routing network duration
     const distKm = haversineDistance(origin.lat, origin.lng, destination.lat, destination.lng);
-
-    // Check MapTiler API Key safely in both browser (Vite) and Node/test environments
-    let apiKey = '';
-    const proc = (globalThis as any).process;
-    if (typeof proc !== 'undefined' && proc?.env?.VITE_MAPTILER_API_KEY) {
-      apiKey = proc.env.VITE_MAPTILER_API_KEY;
-    } else {
-      try {
-        const metaEnv = (new Function('try { return import.meta.env; } catch { return null; }'))();
-        apiKey = metaEnv?.VITE_MAPTILER_API_KEY || metaEnv?.VITE_GOOGLE_MAPS_API_KEY || '';
-      } catch {
-        apiKey = '';
-      }
-    }
-
-    // Attempt MapTiler Routing if API key is configured
-    if (apiKey && apiKey.length > 5) {
-      try {
-        const maptilerProfile = transportMode === 'walking' ? 'pedestrian' : transportMode === 'bicycle' ? 'bicycle' : 'driving';
-        const url = `https://api.maptiler.com/routing/v2/${maptilerProfile}/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?key=${apiKey}`;
-
-        // Short timeout (1500ms) to ensure UI remains snappy
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 1500);
-
-        const res = await fetch(url, { signal: controller.signal });
-        clearTimeout(timeoutId);
-
-        if (res.ok) {
-          const data = await res.json();
-          const route = data.routes?.[0];
-          if (route) {
-            const apiDistKm = Math.round((route.distance / 1000) * 10) / 10;
-            const apiDurMin = Math.max(5, Math.round(route.duration / 60));
-            const polyline: [number, number][] =
-              route.geometry?.coordinates?.map(([lng, lat]: [number, number]) => [lat, lng]) || [];
-
-            const result: RouteResult = {
-              distanceKm: apiDistKm,
-              durationMinutes: apiDurMin,
-              polyline: polyline.length > 0 ? polyline : undefined,
-              source: 'maptiler',
-              transitInstruction: `${apiDistKm} km • ${apiDurMin} mins via ${transportMode} (MapTiler Road Route)`
-            };
-            routeCache.set(cacheKey, result);
-            return result;
-          }
-        }
-      } catch (err) {
-        // Fallback transparently on network failure / offline mode
-      }
-    }
-
-    // Realistic Urban Transit Network Fallback
     const durationMin = calculateRealisticDuration(distKm, transportMode);
     const result: RouteResult = {
       distanceKm: distKm,

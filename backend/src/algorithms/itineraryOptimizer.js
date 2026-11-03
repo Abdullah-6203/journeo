@@ -228,7 +228,6 @@ export function generateItineraryPlan({
       categoryCount[sc.place.category] = count + 1;
     }
   }
-  }
 
   // 2-Opt Route Optimization
   const ordered = optimizeRouteWith2Opt(selectedPool, startLat, startLng);

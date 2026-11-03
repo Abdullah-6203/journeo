@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { getActiveMapTileConfig } from '../services/mapProviderService';
 
 export interface MapMarker {
   id: string;
@@ -44,9 +43,7 @@ export const MapComponent: React.FC<MapComponentProps> = ({
   const markerLayerRef = useRef<L.LayerGroup | null>(null);
   const polylineRef = useRef<L.Polyline | null>(null);
   const markerInstancesRef = useRef<Map<string, L.Marker>>(new Map());
-  const [activeProviderName, setActiveProviderName] = useState<string>(
-    getActiveMapTileConfig().displayName
-  );
+  const [activeProviderName] = useState<string>('CartoDB & OpenStreetMap');
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -73,7 +70,7 @@ export const MapComponent: React.FC<MapComponentProps> = ({
     });
     mapRef.current = map;
 
-    // 1. Rock-solid base tile layer: CartoDB Voyager + OSM (zero auth friction, 100% reliability)
+    // 1. Rock-solid base tile layer: CartoDB Voyager + OSM (zero auth friction, 100% reliability, zero watermarks)
     const baseTileLayer = L.tileLayer(
       'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
       {
@@ -83,37 +80,6 @@ export const MapComponent: React.FC<MapComponentProps> = ({
       }
     );
     baseTileLayer.addTo(map);
-
-    // 2. Active custom provider pre-flight test (if user configured MapTiler, Google Maps, Mappls)
-    const tileConfig = getActiveMapTileConfig();
-    if (tileConfig.provider !== 'leaflet_carto') {
-      const sampleTileUrl = tileConfig.tileUrl
-        .replace('{s}', tileConfig.subdomains ? tileConfig.subdomains[0] : 'a')
-        .replace('{z}', '1')
-        .replace('{x}', '1')
-        .replace('{y}', '0')
-        .replace('{r}', '');
-
-      const tester = new Image();
-      tester.onload = () => {
-        if (mapRef.current) {
-          const customTileLayer = L.tileLayer(tileConfig.tileUrl, {
-            attribution: tileConfig.attribution,
-            maxZoom: tileConfig.maxZoom,
-            subdomains: tileConfig.subdomains || ['a', 'b', 'c', 'd']
-          });
-          customTileLayer.addTo(mapRef.current);
-          setActiveProviderName(tileConfig.displayName);
-        }
-      };
-      tester.onerror = () => {
-        console.warn(
-          `[Journeo Map] API Key for ${tileConfig.displayName} returned an authentication/network error. Seamlessly continuing with CartoDB Voyager.`
-        );
-        setActiveProviderName('CartoDB Voyager (Fallback)');
-      };
-      tester.src = sampleTileUrl;
-    }
 
     const layer = L.layerGroup().addTo(map);
     markerLayerRef.current = layer;

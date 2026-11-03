@@ -106,7 +106,8 @@ export function isKnownInvalidKey(key: string | null | undefined): boolean {
     trimmed.includes('placeholder') ||
     trimmed.includes('your_') ||
     trimmed.includes('example') ||
-    trimmed === 'YOUR_API_KEY'
+    trimmed === 'YOUR_API_KEY' ||
+    trimmed === '6LoAXpovn9uPdJweJVOp' // Triggers MapTiler "API key required" watermark
   ) {
     return true;
   }

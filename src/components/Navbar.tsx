@@ -102,16 +102,6 @@ export const Navbar: React.FC = () => {
           >
             Explore
           </Link>
-          <Link
-            to="/destinations"
-            className={`transition-colors ${
-              isHome
-                ? isActive('/destinations') ? 'text-white font-semibold' : 'hover:text-white'
-                : isActive('/destinations') ? 'text-[#49634F] font-semibold' : 'hover:text-[#344B3C]'
-            }`}
-          >
-            Destinations
-          </Link>
           <a
             href="/#how-it-works"
             className={`transition-colors ${
@@ -246,17 +236,6 @@ export const Navbar: React.FC = () => {
               }`}
             >
               Explore
-            </Link>
-            <Link
-              to="/destinations"
-              onClick={closeMobile}
-              className={`p-2 rounded-lg ${
-                isHome
-                  ? isActive('/destinations') ? 'text-[#C5A36A] font-bold bg-white/5' : 'hover:bg-white/10 text-white'
-                  : isActive('/destinations') ? 'text-[#49634F] font-bold bg-[#C8D2BE]/30' : 'hover:bg-[#DFE3D3] text-[#344B3C]'
-              }`}
-            >
-              Destinations
             </Link>
             <a
               href="/#how-it-works"

@@ -137,10 +137,7 @@ export const ExplorePage: React.FC = () => {
             Explore Landmarks, Cafes & Hidden Gems
           </h1>
           <p className="text-stone-600 text-base leading-relaxed">
-            Discover individual attractions, heritage monuments, local dining institutions, and viewpoints across India. Inspect Google review summaries, view coordinates on the map, or add stops directly to your trip. Looking for city-level overviews? Browse{' '}
-            <Link to="/destinations" className="text-deep-green font-semibold underline hover:text-terracotta">
-              Destinations
-            </Link>.
+            Discover verified historical monuments, heritage citadels, authentic dining institutions, cafes, and viewpoints across India. Inspect visitor reviews, explore coordinates on the interactive map, and add places directly to your trip itinerary.
           </p>
         </div>
 

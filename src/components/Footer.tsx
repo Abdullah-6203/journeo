@@ -27,12 +27,12 @@ export const Footer: React.FC = () => {
           <div>
             <h4 className="font-serif font-bold text-sm text-[#344B3C] mb-3">Explore Destinations</h4>
             <ul className="space-y-2 text-xs text-[#5C6B5B]">
-              <li><Link to="/destinations?city=Delhi" className="hover:text-[#49634F] transition-colors">Delhi Royal Citadels</Link></li>
-              <li><Link to="/destinations?city=Jaipur" className="hover:text-[#49634F] transition-colors">Jaipur Rajput Forts</Link></li>
-              <li><Link to="/destinations?city=Agra" className="hover:text-[#49634F] transition-colors">Agra Mughal Architecture</Link></li>
-              <li><Link to="/destinations?city=Varanasi" className="hover:text-[#49634F] transition-colors">Varanasi Spiritual Ghats</Link></li>
-              <li><Link to="/destinations?city=Udaipur" className="hover:text-[#49634F] transition-colors">Udaipur Lake Palaces</Link></li>
-              <li><Link to="/destinations?city=Hampi" className="hover:text-[#49634F] transition-colors">Hampi Vijayanagara Ruins</Link></li>
+              <li><Link to="/explore?destination=Delhi" className="hover:text-[#49634F] transition-colors">Delhi Royal Citadels</Link></li>
+              <li><Link to="/explore?destination=Jaipur" className="hover:text-[#49634F] transition-colors">Jaipur Rajput Forts</Link></li>
+              <li><Link to="/explore?destination=Agra" className="hover:text-[#49634F] transition-colors">Agra Mughal Architecture</Link></li>
+              <li><Link to="/explore?destination=Varanasi" className="hover:text-[#49634F] transition-colors">Varanasi Spiritual Ghats</Link></li>
+              <li><Link to="/explore?destination=Udaipur" className="hover:text-[#49634F] transition-colors">Udaipur Lake Palaces</Link></li>
+              <li><Link to="/explore?destination=Goa" className="hover:text-[#49634F] transition-colors">Goa Heritage & Beaches</Link></li>
             </ul>
           </div>
 

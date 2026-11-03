@@ -12,7 +12,6 @@ import { PlanTripPage } from './pages/PlanTripPage';
 import { ItineraryResultPage } from './pages/ItineraryResultPage';
 import { JourneyModePage } from './pages/JourneyModePage';
 import { MyTripsPage } from './pages/MyTripsPage';
-import { DestinationsListPage } from './pages/DestinationsListPage';
 import { DestinationDetailPage } from './pages/DestinationDetailPage';
 import { ExplorePage } from './pages/ExplorePage';
 import { ProfilePage } from './pages/ProfilePage';
@@ -31,7 +30,7 @@ export const App: React.FC = () => {
                 <Route path="/login" element={<AuthPage />} />
                 <Route path="/register" element={<AuthPage />} />
                 <Route path="/explore" element={<ExplorePage />} />
-                <Route path="/destinations" element={<DestinationsListPage />} />
+                <Route path="/destinations" element={<Navigate to="/explore" replace />} />
                 <Route path="/destinations/:id" element={<DestinationDetailPage />} />
                 <Route path="/plan" element={<PlanTripPage />} />
                 <Route path="/itinerary/preview" element={<ItineraryResultPage />} />

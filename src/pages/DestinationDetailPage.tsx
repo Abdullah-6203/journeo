@@ -86,13 +86,13 @@ export const DestinationDetailPage: React.FC = () => {
           Destination Not Found
         </h2>
         <p className="text-stone-500 mb-6 text-sm">
-          We couldn’t find "{id}" in our verified Indian destination catalog. Browse our 10 canonical travel hubs below.
+          We couldn’t find "{id}" in our verified Indian destination catalog. Explore all places and destinations below.
         </p>
         <Link
-          to="/destinations"
+          to="/explore"
           className="bg-deep-green text-white px-6 py-3 rounded-2xl text-sm font-medium inline-flex items-center gap-2"
         >
-          <ArrowLeft className="w-4 h-4" /> Browse All Destinations
+          <ArrowLeft className="w-4 h-4" /> Explore Places & Destinations
         </Link>
       </div>
     );
@@ -102,10 +102,10 @@ export const DestinationDetailPage: React.FC = () => {
     <div className="min-h-screen pt-24 pb-24 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <button
-          onClick={() => navigate('/destinations')}
+          onClick={() => navigate('/explore')}
           className="inline-flex items-center gap-2 text-sm font-medium text-stone-500 hover:text-charcoal transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" /> All Destinations
+          <ArrowLeft className="w-4 h-4" /> Back to Explore
         </button>
 
         <Link

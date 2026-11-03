@@ -135,6 +135,8 @@ export const PlanTripPage: React.FC = () => {
   const [foodStyle, setFoodStyle] = useState<string>('local_cuisine');
   const [excludedCategories, setExcludedCategories] = useState<string[]>([]);
   const [dietaryPreference, setDietaryPreference] = useState<'all' | 'vegetarian' | 'vegan' | 'halal'>('all');
+  const [budgetStrictness, setBudgetStrictness] = useState<'flexible' | 'moderate' | 'strict'>('moderate');
+  const [preferredExperience, setPreferredExperience] = useState<string>('cultural_exploration');
   const [naturalLanguageInput, setNaturalLanguageInput] = useState<string>('');
 
   // Step 3: Places & Review
@@ -333,6 +335,8 @@ export const PlanTripPage: React.FC = () => {
         foodStyle,
         excludedCategories,
         budget: budgetEnabled ? liveBudgetBreakdown.totalBudget : 0,
+        budgetStrictness,
+        preferredExperience,
         travellers,
         intercityTransport: intercityTransportConfig,
         budgetConfig: budgetConfigObj,

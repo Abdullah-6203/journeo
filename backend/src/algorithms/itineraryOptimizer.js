@@ -1,3 +1,8 @@
+import {
+  scoreCandidatePlace,
+  evaluateHardConstraints
+} from './personalisationEngine.js';
+
 export function haversineDistanceKm(lat1, lon1, lat2, lon2) {
   const R = 6371; // Earth radius in km
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -127,17 +132,44 @@ export function generateItineraryPlan({
   destinations = [],
   mustVisitIds = [],
   excludedIds = [],
+  excludedCategories = [],
   startingLocation = { lat: 28.6328, lng: 77.2197, address: 'City Centre' },
   startTime = '09:00',
   availableHours = 8,
   transportMode = 'cab',
   travelStyle = 'balanced',
   interests = [],
+  budget = 0,
+  budgetStrictness = 'moderate',
+  preferredExperience = 'cultural_exploration',
+  customWeights = null,
   naturalLanguagePrompt = '',
   seedVariation = 0
 }) {
-  const validDests = destinations.filter(d => !excludedIds.includes(d.id));
-  if (validDests.length === 0) {
+  const startLat = startingLocation.lat || destinations[0]?.latitude || 28.6328;
+  const startLng = startingLocation.lng || destinations[0]?.longitude || 77.2197;
+
+  const profile = {
+    destinationCity: destinations[0]?.city || 'Delhi',
+    selectedInterests: interests,
+    travelStyle,
+    preferredExperience,
+    budget,
+    budgetStrictness,
+    excludedPlaceIds: excludedIds,
+    excludedCategories,
+    mustVisitPlaceIds: mustVisitIds,
+    customWeights,
+    startingLocation: { lat: startLat, lng: startLng }
+  };
+
+  // 1. Hard constraint filter
+  const eligibleDests = destinations.filter(d => {
+    const check = evaluateHardConstraints(d, profile);
+    return check.isEligible;
+  });
+
+  if (eligibleDests.length === 0) {
     return {
       optimizationScore: 85,
       totalDistanceKm: 0,
@@ -146,45 +178,20 @@ export function generateItineraryPlan({
     };
   }
 
-  const startLat = startingLocation.lat || validDests[0]?.latitude || 28.6328;
-  const startLng = startingLocation.lng || validDests[0]?.longitude || 77.2197;
-  const promptLower = (naturalLanguagePrompt || '').toLowerCase();
-
-  // Multi-Factor Personalized Candidate Scoring
-  const scored = validDests.map(d => {
-    let score = 50;
-
-    // Explicit Interest Match (30%)
-    const catMatch = interests.some(
-      i => i.toLowerCase().includes(d.category.toLowerCase()) || (d.interestTags && d.interestTags.includes(i))
-    );
-    if (catMatch) score += 35;
-
-    // Free-Text Semantic Matching (25%)
-    const descLower = `${d.name} ${d.description || ''} ${d.category}`.toLowerCase();
-    if (promptLower.includes('food') && (d.category === 'Food' || descLower.includes('bazaar'))) score += 30;
-    if (promptLower.includes('sunset') && descLower.includes('sunset')) score += 30;
-    if (promptLower.includes('fort') && descLower.includes('fort')) score += 25;
-    if (promptLower.includes('peace') && (d.category === 'Nature' || d.category === 'Spiritual')) score += 25;
-    if (promptLower.includes('hidden') && descLower.includes('hidden')) score += 30;
-
-    // Quality & UNESCO status (15%)
-    if (d.officialSource && d.officialSource.includes('UNESCO')) score += 30;
-    else if (d.officialSource && d.officialSource.includes('ASI')) score += 20;
-
-    // Diversity bonus (15%)
-    if (d.category === 'Food' || d.category === 'Nature') score += 20;
-
-    // Proximity (15%)
-    const dist = haversineDistanceKm(startLat, startLng, d.latitude, d.longitude);
-    score += Math.max(0, 30 - dist * 2);
-
-    // Controlled variation to prevent identical repeat generations
-    const hash = d.id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-    const variation = seedVariation > 0 ? ((hash * (seedVariation + 1)) % 16) - 8 : 0;
-    score += variation;
-
-    return { place: d, score: Math.round(score) };
+  // 2. Personalization Scoring Engine
+  const scored = eligibleDests.map(d => {
+    const res = scoreCandidatePlace(d, profile, { lat: startLat, lng: startLng });
+    // Stable tie-breaking variation if seedVariation > 0
+    let adjustedScore = res.score;
+    if (seedVariation > 0) {
+      const hash = d.id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+      adjustedScore += ((hash * (seedVariation + 1)) % 10) - 5;
+    }
+    return {
+      place: d,
+      score: adjustedScore,
+      metadata: res.metadata
+    };
   });
 
   scored.sort((a, b) => b.score - a.score);
@@ -198,6 +205,8 @@ export function generateItineraryPlan({
 
   // Candidate Selection with Category Diversity Balancing
   const selectedPool = [];
+  const candidateMetadataMap = new Map();
+  scored.forEach(s => candidateMetadataMap.set(s.place.id, s.metadata));
   const categoryCount = {};
 
   // Must-visits first
@@ -218,6 +227,7 @@ export function generateItineraryPlan({
       selectedPool.push(sc.place);
       categoryCount[sc.place.category] = count + 1;
     }
+  }
   }
 
   // 2-Opt Route Optimization
@@ -265,6 +275,7 @@ export function generateItineraryPlan({
         ? `Depart ${lastAddress} • ${dist} km (${transitMin} min ${transportMode})`
         : `Transit from ${lastAddress} • ${dist} km (${transitMin} min ${transportMode})`;
 
+    const meta = candidateMetadataMap.get(dest.id);
     scheduledStops.push({
       id: `stop_${dest.id}`,
       destinationId: dest.id,
@@ -283,7 +294,8 @@ export function generateItineraryPlan({
       travelFromPreviousMinutes: transitMin,
       distanceFromPrevKm: dist,
       distanceFromPreviousKm: dist,
-      reasonForSelection: `Prioritized for ${dest.category} profile and optimal geographic route.`
+      reasonForSelection: meta?.reason || `Prioritized for ${dest.category} profile and optimal geographic route.`,
+      personalisation: meta || null
     });
 
     lastAddress = dest.name.split('(')[0].trim();

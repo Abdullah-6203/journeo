@@ -932,6 +932,17 @@ export const ItineraryResultPage: React.FC = () => {
                             </span>
                           </div>
                         )}
+
+                        {stop.personalisation && (
+                          <div className="mt-1.5 text-[10px] text-text-subtle font-mono bg-ivory/90 rounded-lg px-2.5 py-1 border border-border flex items-center justify-between flex-wrap gap-2">
+                            <span className="font-semibold text-deep-green">
+                              Match: {stop.personalisation.finalScore}/100
+                            </span>
+                            <span>
+                              I: {Math.round(stop.personalisation.interestMatch * 100)}% • B: {Math.round(stop.personalisation.budgetSuitability * 100)}% • D: {Math.round(stop.personalisation.distanceSuitability * 100)}% • C: {Math.round(stop.personalisation.experienceMatch * 100)}%
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       <img

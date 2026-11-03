@@ -16,7 +16,12 @@ export async function generateItinerary(req, res) {
       transportMode = 'cab',
       travelStyle = 'balanced',
       naturalLanguagePrompt,
-      interests = []
+      interests = [],
+      budget = 0,
+      budgetStrictness = 'moderate',
+      preferredExperience = 'cultural_exploration',
+      excludedCategories = [],
+      customWeights = null
     } = req.body;
 
     let effectiveStyle = travelStyle;
@@ -50,12 +55,17 @@ export async function generateItinerary(req, res) {
       destinations: candidates,
       mustVisitIds,
       excludedIds,
+      excludedCategories,
       startingLocation: startingLocation || { lat: 28.6328, lng: 77.2197, address: 'Connaught Place, Central Delhi' },
       startTime,
       availableHours: Number(availableHours) || 8,
       transportMode: effectiveTransport,
       travelStyle: effectiveStyle,
       interests: effectiveInterests,
+      budget: Number(budget) || 0,
+      budgetStrictness,
+      preferredExperience,
+      customWeights,
       naturalLanguagePrompt,
       seedVariation: req.body.seedVariation || 0
     });

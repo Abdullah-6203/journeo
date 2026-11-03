@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { getActiveMapTileConfig } from '../services/mapProviderService';
 
 export interface MapMarker {
@@ -59,18 +60,64 @@ export const MapComponent: React.FC<MapComponentProps> = ({
     });
     mapRef.current = map;
 
-    // Active Map Tile Provider (Mappls or CartoDB Voyager / OpenStreetMap)
+    // 1. Rock-solid base tile layer: CartoDB Voyager + OSM (zero auth friction, 100% reliability)
+    const baseTileLayer = L.tileLayer(
+      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+      {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        maxZoom: 19,
+        subdomains: ['a', 'b', 'c', 'd']
+      }
+    );
+    baseTileLayer.addTo(map);
+
+    // 2. Active custom provider overlay (if user configured Mappls, MapTiler, etc.)
     const tileConfig = getActiveMapTileConfig();
-    L.tileLayer(tileConfig.tileUrl, {
-      attribution: tileConfig.attribution,
-      maxZoom: tileConfig.maxZoom,
-      subdomains: tileConfig.subdomains || ['a', 'b', 'c', 'd']
-    }).addTo(map);
+    if (tileConfig.provider !== 'leaflet_carto') {
+      const customTileLayer = L.tileLayer(tileConfig.tileUrl, {
+        attribution: tileConfig.attribution,
+        maxZoom: tileConfig.maxZoom,
+        subdomains: tileConfig.subdomains || ['a', 'b', 'c', 'd']
+      });
+
+      let customFailed = false;
+      customTileLayer.on('tileerror', () => {
+        if (!customFailed) {
+          customFailed = true;
+          console.warn(`[Journeo Map] Custom tile provider '${tileConfig.provider}' encountered tile errors. Seamlessly falling back to CartoDB Voyager.`);
+          setTimeout(() => {
+            if (mapRef.current && mapRef.current.hasLayer(customTileLayer)) {
+              mapRef.current.removeLayer(customTileLayer);
+              mapRef.current.invalidateSize();
+            }
+          }, 0);
+        }
+      });
+
+      customTileLayer.addTo(map);
+    }
 
     const layer = L.layerGroup().addTo(map);
     markerLayerRef.current = layer;
 
+    // Resize listeners to guarantee no collapsed 0x0 container inside flex/grid layouts
+    const t1 = setTimeout(() => map.invalidateSize(), 150);
+    const t2 = setTimeout(() => map.invalidateSize(), 500);
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        if (mapRef.current) {
+          mapRef.current.invalidateSize();
+        }
+      });
+      resizeObserver.observe(containerRef.current);
+    }
+
     return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      if (resizeObserver) resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
       markerInstancesRef.current.clear();
@@ -167,8 +214,10 @@ export const MapComponent: React.FC<MapComponentProps> = ({
       }).addTo(map);
       polylineRef.current = poly;
       map.fitBounds(poly.getBounds(), { padding: [40, 40] });
+      setTimeout(() => map.invalidateSize(), 100);
     } else if (latLngs.length === 1) {
       map.setView(latLngs[0], 13);
+      setTimeout(() => map.invalidateSize(), 100);
     }
   }, [markers, showRoute]);
 
@@ -184,11 +233,18 @@ export const MapComponent: React.FC<MapComponentProps> = ({
   }, [selectedMarkerId]);
 
   return (
-    <div className="relative w-full rounded-2xl overflow-hidden border border-border shadow-soft-md" style={{ height }}>
-      <div ref={containerRef} className="w-full h-full" />
+    <div
+      className="relative w-full rounded-2xl overflow-hidden border border-border shadow-soft-md"
+      style={{ height, minHeight: height }}
+    >
+      <div
+        ref={containerRef}
+        className="w-full h-full"
+        style={{ width: '100%', height: '100%', minHeight: height }}
+      />
       <div className="absolute top-3 right-3 z-[1000] bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-lg border border-border text-[11px] font-semibold text-text flex items-center gap-1.5 shadow-soft-sm">
         <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
-        <span>Verified Coordinates • {getActiveMapTileConfig().provider === 'mappls' ? 'Mappls Enterprise' : 'CartoDB & OpenStreetMap'}</span>
+        <span>Verified Coordinates • {getActiveMapTileConfig().displayName}</span>
       </div>
     </div>
   );

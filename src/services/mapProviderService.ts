@@ -6,7 +6,8 @@
  */
 
 export interface MapProviderConfig {
-  provider: 'mappls' | 'leaflet_carto' | 'leaflet_osm';
+  provider: 'mappls' | 'google_maps' | 'maptiler' | 'leaflet_carto' | 'leaflet_osm';
+  displayName: string;
   isConfigured: boolean;
   tileUrl: string;
   attribution: string;
@@ -68,6 +69,51 @@ export const MAP_PROVIDER_EVALUATION_MATRIX: MapProviderEvaluation[] = [
 ];
 
 /**
+ * Universal environment variable accessor supporting Vite browser client (`import.meta.env`)
+ * and Node.js backend/test runner (`process.env`).
+ */
+export function getEnvVal(
+  key: string,
+  envOverride?: Record<string, string | undefined>
+): string {
+  if (envOverride && key in envOverride) return (envOverride[key] || '').trim();
+
+  // 1. Safely retrieve import.meta.env without parse-time CJS SyntaxErrors in Node.js/jiti
+  try {
+    const metaGetter = new Function('try { return import.meta.env; } catch { return null; }');
+    const meta = metaGetter();
+    if (meta && typeof meta === 'object' && key in meta && typeof meta[key] === 'string') {
+      return meta[key].trim();
+    }
+  } catch {}
+
+  // 2. Node.js process.env check for test runners & backend
+  try {
+    const proc = (globalThis as any).process;
+    if (proc && proc.env && key in proc.env && typeof proc.env[key] === 'string') {
+      return proc.env[key].trim();
+    }
+  } catch {}
+
+  return '';
+}
+
+export function isKnownInvalidKey(key: string | null | undefined): boolean {
+  if (!key) return true;
+  const trimmed = key.trim();
+  if (trimmed.length < 8) return true;
+  if (
+    trimmed.includes('placeholder') ||
+    trimmed.includes('your_') ||
+    trimmed.includes('example') ||
+    trimmed === '6LoAXpovn9uPdJweJVOp'
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Checks environment variables for Mappls API credentials.
  */
 export function checkMapplsConfiguration(
@@ -79,21 +125,19 @@ export function checkMapplsConfiguration(
   missingKeys: string[];
   statusMessage: string;
 } {
-  const getEnv = (key: string): string => {
-    if (envOverride && key in envOverride) return (envOverride[key] || '').trim();
-    const proc = (globalThis as any).process;
-    if (proc && proc.env && key in proc.env) return (proc.env[key] || '').trim();
-    return '';
-  };
-
-  const restKey = getEnv('MAPPLS_REST_KEY') || getEnv('VITE_MAPPLS_REST_KEY') || getEnv('VITE_MAPPLS_API_KEY');
-  const clientId = getEnv('MAPPLS_CLIENT_ID') || getEnv('VITE_MAPPLS_CLIENT_ID');
+  const restKey =
+    getEnvVal('MAPPLS_REST_KEY', envOverride) ||
+    getEnvVal('VITE_MAPPLS_REST_KEY', envOverride) ||
+    getEnvVal('VITE_MAPPLS_API_KEY', envOverride);
+  const clientId =
+    getEnvVal('MAPPLS_CLIENT_ID', envOverride) ||
+    getEnvVal('VITE_MAPPLS_CLIENT_ID', envOverride);
 
   const missingKeys: string[] = [];
   if (!restKey) missingKeys.push('MAPPLS_REST_KEY');
   if (!clientId) missingKeys.push('MAPPLS_CLIENT_ID');
 
-  const isConfigured = Boolean(restKey && restKey.length > 8 && !restKey.includes('placeholder'));
+  const isConfigured = Boolean(restKey && !isKnownInvalidKey(restKey));
 
   return {
     isConfigured,
@@ -108,13 +152,16 @@ export function checkMapplsConfiguration(
 
 /**
  * Returns the active map tile configuration based on available provider keys.
+ * Supports Mappls, MapTiler, Google Maps, and high-performance CartoDB Voyager fallback.
  */
-export function getActiveMapTileConfig(): MapProviderConfig {
-  const mappls = checkMapplsConfiguration();
-
+export function getActiveMapTileConfig(
+  envOverride?: Record<string, string | undefined>
+): MapProviderConfig {
+  const mappls = checkMapplsConfiguration(envOverride);
   if (mappls.isConfigured && mappls.restKey) {
     return {
       provider: 'mappls',
+      displayName: 'Mappls Enterprise',
       isConfigured: true,
       tileUrl: `https://apis.mappls.com/advancedmaps/v1/${mappls.restKey}/still_image?center={lat},{lng}&zoom={z}&size=512x512`,
       attribution: '&copy; MapmyIndia / Mappls, Survey of India',
@@ -122,9 +169,26 @@ export function getActiveMapTileConfig(): MapProviderConfig {
     };
   }
 
-  // Default high-performance Carto Voyager + OpenStreetMap tiles
+  const maptilerKey =
+    getEnvVal('VITE_MAPTILER_API_KEY', envOverride) ||
+    getEnvVal('MAPTILER_API_KEY', envOverride);
+
+  // MapTiler tiles — only activate if key is present and not dummy/placeholder
+  if (maptilerKey && !isKnownInvalidKey(maptilerKey)) {
+    return {
+      provider: 'maptiler',
+      displayName: 'MapTiler Streets',
+      isConfigured: true,
+      tileUrl: `https://api.maptiler.com/maps/voyager/{z}/{x}/{y}.png?key=${maptilerKey}`,
+      attribution: '&copy; <a href="https://www.maptiler.com/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19
+    };
+  }
+
+  // Default high-performance Carto Voyager + OpenStreetMap tiles (always valid, zero auth friction)
   return {
     provider: 'leaflet_carto',
+    displayName: 'CartoDB & OpenStreetMap',
     isConfigured: true,
     tileUrl: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',

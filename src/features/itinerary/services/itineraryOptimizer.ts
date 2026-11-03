@@ -13,6 +13,13 @@ import {
   estimateIntercityTransport,
   calculateTripBudgetBreakdown
 } from '../../../services/expenseService';
+import {
+  PersonalisationDebugMetadata,
+  UserPersonalisationProfile,
+  BudgetStrictness,
+  scoreCandidatePlace,
+  evaluateHardConstraints
+} from '../../../services/personalisationEngine';
 
 export interface TripOptimizationRequest {
   destination: string;
@@ -33,6 +40,15 @@ export interface TripOptimizationRequest {
   excludedCategories?: string[];
   experienceTypes?: string[];
   budget?: number;
+  budgetStrictness?: BudgetStrictness;
+  preferredExperience?: string;
+  customWeights?: {
+    interest?: number;
+    budget?: number;
+    distance?: number;
+    experience?: number;
+  };
+  lockedPlaceIds?: string[];
   travellers?: number;
   intercityTransport?: Partial<IntercityTransportConfig>;
   budgetConfig?: Partial<TripBudgetConfig>;
@@ -85,6 +101,7 @@ export interface ItineraryStopOutput {
   estimated: boolean;
   reasonForSelection: string;
   personalizationScore?: number;
+  personalisation?: PersonalisationDebugMetadata;
   destination: IndiaDestination;
   coordinates: {
     lat: number;
@@ -638,6 +655,7 @@ export interface ScoredCandidate {
     budgetBonus: number;
   };
   selectionReason: string;
+  personalisation?: PersonalisationDebugMetadata;
 }
 
 /**
@@ -1052,9 +1070,36 @@ export function scoreCandidatePlaces(
 
     const totalScore = Math.max(5, Math.round(rawTotal));
 
+    // Calculate explicit multi-factor personalisation metadata using personalisationEngine
+    const engineProfile: UserPersonalisationProfile = {
+      destinationCity: request.destination || candidates[0]?.city || 'Delhi',
+      selectedInterests: request.selectedInterests || [],
+      travelStyle: request.travelPace || 'balanced',
+      preferredExperience:
+        request.preferredExperience ||
+        (isFoodFocused
+          ? 'food_focused'
+          : isNatureFocused
+          ? 'nature_focused'
+          : isHistoryFocused
+          ? 'cultural_exploration'
+          : 'cultural_exploration'),
+      budget: request.budget,
+      budgetStrictness: request.budgetStrictness || 'moderate',
+      travellers: request.travellers,
+      totalDays: request.days,
+      startingLocation: { lat: startLat, lng: startLng },
+      excludedPlaceIds: request.excludedPlaceIds,
+      excludedCategories: request.excludedCategories,
+      mustVisitPlaceIds: request.mustVisitPlaceIds,
+      customWeights: request.customWeights
+    };
+    const engineResult = scoreCandidatePlace(place, engineProfile, { lat: startLat, lng: startLng });
+
     // Pick the highest-scoring grounded reason
     reasonCandidates.sort((a, b) => b.score - a.score);
     const bestReason =
+      engineResult.metadata.reason ||
       reasonCandidates[0]?.text ||
       (place.isMustVisit
         ? `Signature ${place.subcategory || place.category} landmark in ${place.area || place.city}`
@@ -1079,7 +1124,8 @@ export function scoreCandidatePlaces(
         dietaryBonus,
         budgetBonus
       },
-      selectionReason: bestReason
+      selectionReason: bestReason,
+      personalisation: engineResult.metadata
     };
   });
 }
@@ -1451,6 +1497,7 @@ export function scheduleDayStops(
       estimated: true,
       reasonForSelection: stopReason,
       personalizationScore: scoredInfo?.totalScore,
+      personalisation: scoredInfo?.personalisation,
       destination: place,
       coordinates: {
         lat: place.latitude,

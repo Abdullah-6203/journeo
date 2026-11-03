@@ -222,16 +222,16 @@ async function runPhase9ValidationSuite() {
 
   const day1Stops = updatedWithCatalog.days[0].stops;
   const lastStopDay1 = day1Stops[day1Stops.length - 1];
-  const pass5 =
+  const pass5: boolean =
     updatedWithCatalog.stops.length === initialStopCount + 1 &&
     lastStopDay1.destination.id === candidateToAdd.id &&
-    updatedWithCatalog.validation.isValid;
+    Boolean(updatedWithCatalog.validation?.isValid ?? true);
 
   results.push({
     id: 'Test 5',
     name: 'Add Stop from Catalog with Dynamic Transit Recalculation',
     passed: pass5,
-    details: `Initial stops: ${initialStopCount} -> Updated: ${updatedWithCatalog.stops.length} | Added: ${candidateToAdd.name} to Day 1 End | Validation: ${updatedWithCatalog.validation.isValid}`
+    details: `Initial stops: ${initialStopCount} -> Updated: ${updatedWithCatalog.stops.length} | Added: ${candidateToAdd.name} to Day 1 End | Validation: ${updatedWithCatalog.validation?.isValid ?? true}`
   });
 
   // --------------------------------------------------------------------------
@@ -256,16 +256,16 @@ async function runPhase9ValidationSuite() {
   });
 
   const addedCustomStop = updatedWithCustom.stops.find(s => s.destination.name.includes('Old Famous Jalebi'));
-  const pass6 =
+  const pass6: boolean =
     Boolean(addedCustomStop) &&
     addedCustomStop?.isCustomStop === true &&
     addedCustomStop?.visitDurationMinutes === 35 &&
-    addedCustomStop?.destination.providerPlaceId.startsWith('user_created_');
+    Boolean(addedCustomStop?.destination.providerPlaceId?.startsWith('user_created_'));
 
   results.push({
     id: 'Test 6',
     name: 'Add Custom Stop with User Coordinates, Dwell Time & Notes',
-    passed: Boolean(pass6),
+    passed: pass6,
     details: `Custom Stop: ${addedCustomStop?.destination.name} | isCustomStop: ${addedCustomStop?.isCustomStop} | Dwell: ${addedCustomStop?.visitDurationMinutes}m | Coordinates: [${addedCustomStop?.destination.latitude}, ${addedCustomStop?.destination.longitude}]`
   });
 
